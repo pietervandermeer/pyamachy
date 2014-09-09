@@ -1,0 +1,235 @@
+# -*- coding: iso-8859-1 -*-
+import numpy
+import h5py
+import ConfigParser
+
+"""
+functions and classes related to SCIAMACHY operation and instrument
+2011 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
+"""
+
+channels = ['1','2','3','4','5','6','6+','7','8']
+pixranges = [numpy.arange(1024), \
+             1024+numpy.arange(1024), \
+             1024*2+numpy.arange(1024), \
+             1024*3+numpy.arange(1024), \
+             1024*4+numpy.arange(1024), \
+             1024*5+numpy.arange(795), \
+             1024*5+795+numpy.arange(229), \
+             1024*6+numpy.arange(1024), \
+             1024*7+numpy.arange(1024), \
+            ]
+
+mask_criteria = ['combined','RTS','darkCurrentError','darkCurrentSat','invalid','residual']
+
+class MemCorrector:
+    
+    def __init__(self):
+        
+        #
+        # Parse config file, exit if unsuccessful
+        #
+        
+        config_fname = open('default3.1.cfg')
+        try:
+            self.cfg = self.get_config(config_fname)
+        except ConfigParser.NoOptionError, ex:
+            msg = "There was a missing option in the configuration file '"
+            logging.exception(msg+config_fname+"'!")
+            raise
+        
+        #
+        # load memory correction table
+        #
+        
+        fid = h5py.File(self.cfg['memcorr_fname'], 'r')
+        dset = fid['MemTable']
+        self.memtbl = dset[:]
+        #print "memtbl.shape=", self.memtbl.shape
+        fid.close()
+
+    def correct(self, spectrum):
+        for i in range(5):
+            spec = (spectrum[i*1024:(i+1)*1024]).round().astype(int)
+            spec = numpy.clip(spec,0,65535)
+            spectrum[i*1024:(i+1)*1024] -= self.memtbl[i,spec]
+        return spectrum
+
+    # load configuration from file
+    def get_config(self, config_file):
+        parser=ConfigParser.SafeConfigParser()
+        parser.readfp(config_file)
+        dict = {}
+        dict['memcorr_fname'] = parser.get('Global','memcorr_file')
+        return dict
+
+class NonlinCorrector:
+    
+    def __init__(self):
+        
+        #
+        # Parse config file, exit if unsuccessful
+        #
+        
+        config_fname = open('default3.1.cfg')
+        try:
+            self.cfg = self.get_config(config_fname)
+        except ConfigParser.NoOptionError, ex:
+            msg = "There was a missing option in the configuration file '"
+            logging.exception(msg+config_fname+"'!")
+            raise
+        
+        #
+        # load non-linearity correction tables
+        #
+        
+        fid = h5py.File(self.cfg['nlcorr_fname'], 'r')
+        dset = fid['CurveIndex']
+        self.curveIndex = dset[:]
+#        indx = curveIndex[nchan-1,ipix % 1024]
+#        self.nlintbl = dset[indx,:]
+        dset = fid['nLinTable']
+        self.nlintbl = dset[:]
+        #print "nlintable.shape", self.nlintbl.shape
+        #print "curveIndex.shape", self.curveIndex.shape
+        fid.close()
+
+    def correct(self, spectrum):
+        for i_chan in range(5,8):
+            tabidx = self.curveIndex[i_chan,:]
+            #print "tabidx.shape=", tabidx.shape
+            #print tabidx
+            spec = (spectrum[i_chan*1024:(i_chan+1)*1024]).round().astype(int)
+            spec = numpy.clip(spec,0,65535)
+            #print spec,spec.shape
+            spectrum[i_chan*1024:(i_chan+1)*1024] -= self.nlintbl[tabidx,spec]
+        return spectrum
+
+    # load configuration from file
+    def get_config(self, config_file):
+        parser=ConfigParser.SafeConfigParser()
+        parser.readfp(config_file)
+        dict = {}
+        dict['nlcorr_fname'] = parser.get('Global','nlcorr_file')
+        return dict
+
+class pixelmask:
+    def __init__(self):
+        # SDMF 3.0 pixelmask: very useful indeed
+        fmask = h5py.File('/SCIA/share/SDMF/3.0/sdmf_pixelmask.h5', 'r')
+        gmask = fmask['smoothMask']
+        self.orbits = (gmask['orbitList'])[:]
+        self.msk = numpy.transpose(gmask['combined'][:,:])
+        fmask.close()
+
+class orbitfilter:
+    """
+    class which filters out special orbits. typically decontaminations and 
+    monthly calibration orbits and such.
+    """
+    
+    def __init__(self):
+        
+        #
+        # Parse config file, exit if unsuccessful
+        #
+        
+        config_fname = open('default3.1.cfg')
+        try:
+            self.cfg = self.get_config(config_fname)
+        except ConfigParser.NoOptionError, ex:
+            msg = "There was a missing option in the configuration file '"
+            logging.exception(msg+config_fname+"'!")
+            raise
+
+        #
+        # read orbit filter files into numpy arrays
+        #
+
+        # easy peasy
+        full_monthlies_fname = self.cfg['db_dir']+self.cfg['monthlies_fname']
+        # this one is tricky since it contains ranges along with HK info
+        full_quality_fname   = self.cfg['db_dir']+self.cfg['quality_fname']
+        self.monthlies = numpy.loadtxt(full_monthlies_fname, dtype=int)
+        qua_file = open(full_quality_fname,'r')
+        qua = qua_file.read()
+        list1 = qua.split('\n')
+        n_rows = len(list1)-1 # assuming there's a trailing \n
+        qua_ranges = numpy.zeros((n_rows,2),dtype=int)
+        #print qua_ranges.shape
+        i=0
+        for line in list1:
+            columns = line.split()
+            if len(columns) < 2:
+                break
+            #print columns[0:2]
+            qua_ranges[i,0] = int(columns[0])
+            qua_ranges[i,1] = int(columns[1])
+            i+=1
+        self.qualities = qua_ranges
+        
+    # load configuration from file
+    def get_config(self, config_file):
+        parser=ConfigParser.SafeConfigParser()
+        parser.readfp(config_file)
+        dict = {}
+        dict['db_dir'] = parser.get('Global','masterdirectory')
+        dict['quality_fname'] = parser.get('Global','quality_file')
+        dict['monthlies_fname'] = parser.get('Global','monthlies_file')
+        return dict
+
+    # stamp out all the low-quality orbit ranges
+    def get_quality_orbit_filter(self, orbits):
+        mask = numpy.ones(orbits.size, dtype=bool)
+        n_ranges = self.qualities.shape[0]
+        for i in range(n_ranges):
+            start = self.qualities[i,0]
+            end = self.qualities[i,1]
+            #loc_mask = (orbits < start) | (orbits > end)
+            #mask &= loc_mask
+            loc_idx = numpy.where((orbits >= start) & (orbits < end))
+            mask[loc_idx] = False
+        return mask
+
+    # stamp out all the orbits around the monthly calibrations 
+    # (without limb or nadir measurements)
+    def get_monthly_orbit_filter(self, orbits):
+        monthly_kernels = numpy.concatenate((self.monthlies,self.monthlies+2,
+                                             self.monthlies+4,self.monthlies-2,
+                                             self.monthlies-4))
+        mask = numpy.in1d(orbits, monthly_kernels)
+        mask = numpy.invert(mask)
+        return mask
+
+# test function. not a unit test.. yet
+if __name__ == '__main__':
+    print "\norbit filter test"
+    filt = orbitfilter()
+    ra = numpy.arange(51000)
+    mo_mask = filt.get_monthly_orbit_filter(ra)
+    qu_mask = filt.get_quality_orbit_filter(ra)
+    ra2 = ra[mo_mask]
+    ra3 = ra[qu_mask]
+    print ra2.shape,ra3.shape
+
+    print "\nmemory correction test"
+    mc = MemCorrector()
+    a = numpy.arange(8192)*4
+    b = mc.correct(a)
+    print b[0:1024]
+    print b[1024:2*1024]
+    print b[2*1024:3*1024]
+    print b[3*1024:4*1024]
+    print b[4*1024:5*1024]
+
+    print "\nnon-linearity correction test"
+    nlc = NonlinCorrector()
+    b= nlc.correct(a)
+    print b[0:1024]
+    print b[1024:2*1024]
+    print b[2*1024:3*1024]
+    print b[3*1024:4*1024]
+    print b[4*1024:5*1024]
+    print b[5*1024:6*1024]
+    print b[6*1024:7*1024]
+    print b[7*1024:8*1024]
