@@ -70,7 +70,7 @@ def sdmf_read_statedark(orbitrange, state_id, calib_db,
                         darksignal=False, peakcounts=False, smoothwidth=False):
 
     if len(orbitrange) is not 2:
-        print 'sdmf_read_statedark_: orbitrange should have 2 elements'
+        print('sdmf_read_statedark_: orbitrange should have 2 elements')
         return
 
     dict = {}
@@ -83,12 +83,12 @@ def sdmf_read_statedark(orbitrange, state_id, calib_db,
     gid = fid["State_"+str('%02d'%state_id)] # generates an exception
     mt_did = gid['metaTable']
     orbitlist = (gid['orbitList'])[:]
-    print 'orbitrange=', orbitrange
+    print('orbitrange=', orbitrange)
 #    metaindx = numpy.where((orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1]))
     metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-    print metaindx
+    print(metaindx)
     if metaindx[0].size is 0:
-        print 'sdmf_read_statedark_: orbit range not present in database'
+        print('sdmf_read_statedark_: orbit range not present in database')
         dict['status'] = -1
         return dict
 

@@ -7,6 +7,8 @@ Both Viewers have the same interface (using duck typing).
 
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 __version__ = '1.0'
 __all__ = [
     'GUIViewer',
@@ -93,7 +95,7 @@ class GUIViewer(wx.Frame):
         is_sub = issubclass(customer.__class__, wx.App)
         if not is_sub:
             app = DummyApp(0)
-            print "GUIViewer: Initialised wx dummy app"
+            print("GUIViewer: Initialised wx dummy app")
             app.MainLoop()
         
         wx.Frame.__init__(self,None,-1,title,size=(550,350))
@@ -174,7 +176,7 @@ class GUIViewer(wx.Frame):
         self.Show(True)
 
     def onToggleGrid(self, event):
-        print "GUIViewer.onToggleGrid()"
+        print("GUIViewer.onToggleGrid()")
             
     def OnAbout(self, event):
         dlg = wx.MessageDialog(self, "Really great viewer program",
@@ -188,9 +190,9 @@ class GUIViewer(wx.Frame):
     def onKeyEvent(self,event=None):
         """ capture , act upon keystroke events"""
         if event == None: return
-        #print str(event)
+        #print(str(event))
         #key = event.KeyCode()
-        #print key
+        #print(key)
         
     def add_toolbar(self):
         self.toolbar = NavigationToolbar2Wx(self.canvas)
@@ -215,11 +217,11 @@ class GUIViewer(wx.Frame):
 
     def EvtText(self, event):
         frstr = event.GetString()
-        print 'EvtText: %s\n' % frstr
+        print('EvtText: %s\n' % frstr)
         try:
             self.freq = float(frstr)
         except:
-            print "wrong value"
+            print("wrong value")
             return
         self.axes.cla()
         self.refresh_plot()
@@ -230,7 +232,7 @@ class GUIViewer(wx.Frame):
         self.Update()
 
     def save_image(self, basename):
-        print self.figure
+        print(self.figure)
         # set figure size in inches
         #f = self.axes.gcf()
         self.figure.set_size_inches(image_dims)
@@ -245,7 +247,7 @@ class GUIViewer(wx.Frame):
 #class Validate_TextCtrl(wx.PyValidator):
     #def __init__ (self):
         #wx.PyValidator.__init__(self)
-        #print "init validator"
+        #print("init validator")
     #def Clone (self):
         #return Validate_TextCtrl ()
     #def TransferToWindow ( self ):
@@ -253,7 +255,7 @@ class GUIViewer(wx.Frame):
     #def TransferFromWindow ( self ):
         #return True
     #def Validate ( self, Win ):
-        #print "Validate"
+        #print("Validate")
         #return True
 
     def add_annotation(self):
