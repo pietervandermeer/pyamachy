@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import numpy
 from numpy import arange, sin, pi
 import h5py
+import ctypes as ct
 
 # Used to guarantee to use at least Wx2.8
 import wxversion
@@ -82,6 +83,25 @@ def read_extracted_states(orbitrange, state_id, calib_db, readoutMean=False, rea
     dict['status'] = 0
     return(dict)
 
+#
+# main
+#
+
+testlib = ct.CDLL('testlib.so')
+
+#testlib.myprint()
+#d = ct.c_double(1.234)
+#ds = (ct.c_double * 4)()
+#for i in range(4):
+#    ds[i] = i
+#testlib.print_double(d)
+#testlib.print_doubles(ds, ct.c_long(len(ds)))
+
+n_elem = 4
+zs = numpy.arange(n_elem)
+#print(zs)
+zs = zs.astype(numpy.float64)
+testlib.print_doubles(zs.ctypes.data_as(ct.POINTER(ct.c_double)), ct.c_long(n_elem))
 
 db_name = "/SCIA/SDMF31/sdmf_extract_calib.h5"
 orbit_range = [24000,25000]
@@ -108,6 +128,26 @@ print(orbits)
 uorbits = numpy.unique(orbits)
 readoutMean = data['readoutMean']
 mtbl = data['mtbl']
+n_records = mtbl.size
+jds = mtbl['julianDay'][:]
+
+#
+# get eclipse orbit phases instead of the SDMF 3.1 polar-based ones
+#
+
+saa_flag = False;
+dummy_orbit = 0
+# prepare orbit phase output array for c
+e_phases = numpy.zeros(n_records) # TODO: directly specify dtype=float64 or so?
+e_phases = e_phases.astype(numpy.float32)
+e_phases_c = e_phases.ctypes.data_as(ct.POINTER(ct.c_float))
+# prepare julianday input array for c
+jds = jds.astype(numpy.float64)
+jds_c = jds.ctypes.data_as(ct.POINTER(ct.c_double))
+testlib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(True), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), e_phases_c, jds_c) 
+
+print(e_phases)
+
 phases = mtbl['orbitPhase'][:]
 
 for i in range(uorbits.size):
@@ -116,12 +156,13 @@ for i in range(uorbits.size):
     vals = readoutMean[idx, pix]
     #print(vals)
     vals = vals.flatten()
-    hor_axis = phases[idx] #numpy.arange(vals.size)
+    #hor_axis = phases[idx] #numpy.arange(vals.size)
+    hor_axis = e_phases[idx] #numpy.arange(vals.size)
     #print(vals.shape)
     #print(vals)
     #print(hor_axis.shape)
     #print(hor_axis)
     plt.scatter(hor_axis, vals, color=colors[i%8])
-
+ 
 #plt.savefig('test.png', dpi=100)
 plt.show()
