@@ -20,6 +20,7 @@
 from __future__ import print_function
 from __future__ import division
 
+import argparse
 import matplotlib
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -38,6 +39,9 @@ import wxversion
 # comment out the following to use wx rather than wxagg
 matplotlib.use('WXAgg')
 
+def onclick(event):
+    print('button=%d, x=%d, y=%d, xdata=%f, ydata=%f' % (event.button, event.x, event.y, event.xdata, event.ydata))
+
 # read simudark data for specified orbit (only ch8 data!)
 def read_simudark(orbit, ao=None, lc=None, amp1=None):
     dict = {}
@@ -46,7 +50,7 @@ def read_simudark(orbit, ao=None, lc=None, amp1=None):
     # obtain indices to entries of the requested orbit
     #
 
-    fid = h5py.File("/SCIA/share/SDMF/3.1/sdmf_simudark.h5", 'r') # generates an exception
+    fid = h5py.File("/SCIA/share/SDMF/3.0/sdmf_simudark.h5", 'r') # generates an exception
     gid = fid["ch8"] # generates an exception
     mt_did = gid['metaTable']
     orbitlist = (gid['orbitList'])[:]
@@ -128,8 +132,61 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     dict['status'] = 0
     return(dict)
 
+#-------------------------------------------------------------------------------
+# computes the variable part of the simudark product for specified orbital 
+# phases.
+#
+# INPUT: (structure)
+#       - phases:    orbital phases [0.0..1.0] (1D array)
+#       - pet:       pixel exposure time
+#       - amp1:      amplitude of fundamental frequency (1D array)
+#       - amp2:      relative amplitude of 1st harmonic
+#       - phase1:    phase shift of fundamental frequency
+#       - phase2:    phase shift of 1st harmonic
+#
+# KEYWORDS:
+#       - n_harmonics: input: how many harmonics to use (0 or 1, default 1)
+#
+# RETURNS:
+#       - variable part per pixel and phase (2D array)
+#-------------------------------------------------------------------------------
+def simudark_orbvar_function(d, n_harmonics=1):
+
+    exec_count = d['phases'].size
+    n_pixels   = d['amp1'].size
+    func       = numpy.empty((n_pixels, exec_count))
+
+    pet_amp   = numpy.matrix(d['pet'] * d['amp1'])
+    amp2      = d['amp2'] * pet_amp
+    # TODO: expand amp2 to channel width if not already so?!
+    #if n_elements(amp2) eq n_pixels/1024 then $
+    #    amp2 = rebin(amp2,n_pixels,/sample)
+
+    # correct fundamental frequency
+    phases1 = numpy.matrix(d['phases']+d['phase1']) # orbital phases shifted by fundamental phase shift
+    func = pet_amp.T * numpy.cos(2*numpy.pi*phases1)
+
+    # correct 1st harmonic
+    if n_harmonics >= 1:
+        phases2 = numpy.matrix(d['phases']+d['phase2'])
+        func += amp2.T * numpy.cos(4*numpy.pi*phases2)
+
+    return func.T
+
+# just a smoke test.. 
+def test_simudark_orbvar_function():
+    d = {}
+    d['phases'] = numpy.array([0.1,0.2,0.3]) # 3 state executions
+    d['pet'] = 0.998
+    d['amp1'] = numpy.array([1,1.1,1,1.1,1,1.1,1,1.1,1,1.1]) # 10 pixels
+    d['amp2'] = .12
+    d['phase1'] = .1
+    d['phase2'] = .2
+    print(simudark_orbvar_function(d))
+
 # test function to check old simudark quality
-def check_eclipse_calib():
+# pixnr: pixel in channel 8 [0..1023]
+def check_eclipse_calib(pixnr):
     orbit = 24000
 
     #
@@ -138,6 +195,7 @@ def check_eclipse_calib():
 
     db_name = "/SCIA/SDMF31/sdmf_extract_calib.h5"
     states = read_extracted_states([orbit,orbit], 8, db_name, readoutMean=True)
+    state_mtbl = states['mtbl']
     print(states['readoutMean'].shape)
     readouts = states['readoutMean'] #states['readoutMean'][:,7*1024:8*1024]
     print(readouts.shape)
@@ -149,17 +207,31 @@ def check_eclipse_calib():
     # correct for dark current with simudark v1
     #
 
-    petcor = 1.18125e-3
+    petcorr = 1.18125e-3
     simudark = read_simudark(orbit, ao=True, lc=True, amp1=True)
-    mtbl = simudark['mtbl']
-    phases = mtbl['orbitPhase'][:]
+    simudark_mtbl = simudark['mtbl']
+    state_phases = state_mtbl['orbitPhase'][:]
     readouts_ch8 = readouts[:,7*1024:8*1024]
     readouts_ch8 -= simudark['ao']
     readouts_ch8 -= simudark['lc'] * (1-petcorr) # TODO: PET belonging to the state data
-    for idx_exec in range(readouts.shape[0]):
-        
-    readouts_ch8 -= 
-    print(readouts_ch8.shape)
+    d = {}
+    d['phases'] = state_phases
+    d['pet'] = numpy.array(1.0-petcorr) * numpy.ones(1024) # TODO: get pet from state data!
+    d['amp1'] = simudark['amp1'][:]
+    d['amp2'] = simudark_mtbl['AMP2'] #[:]
+    d['phase1'] = simudark_mtbl['PHASE1'] #[:]
+    d['phase2'] = simudark_mtbl['PHASE2'] #[:]
+    funk = numpy.array(simudark_orbvar_function(d))
+    print(funk.shape)
+    print(d)
+    #plt.scatter(state_phases, readouts_ch8[:,pixnr]-funk[:,pixnr])
+    fig = plt.figure()
+    cid = fig.canvas.mpl_connect('button_press_event', onclick)
+    darklevel = (simudark['ao']+simudark['lc']*(1.0-petcorr))[pixnr]
+    plt.suptitle("dark level = "+str(darklevel))
+    plt.scatter(state_phases, readouts_ch8[:,pixnr], color='g')
+    plt.scatter(state_phases, funk[:,pixnr], color='r')
+    plt.show()
     return
 
 # plot dark state executions (detrend and overplot them)
@@ -253,6 +325,12 @@ def check_darkstates():
 # main
 #
 
-check_eclipse_calib()
+parser = argparse.ArgumentParser()
+parser.add_argument("pixnr")
+args = parser.parse_args()
+print(args.pixnr)
+
+#test_simudark_orbvar_function()
+check_eclipse_calib(int(args.pixnr))
 #check_darkstates()
 
