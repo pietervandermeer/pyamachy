@@ -31,6 +31,7 @@ from matplotlib.backends.backend_wx import NavigationToolbar2Wx
 from matplotlib.figure import Figure
 #from wx import Menu, MenuBar
 import wx
+import inspect
 
 #- classes ---------------------------------------------------------------------
 
@@ -56,7 +57,9 @@ class DumpingViewer():
         self.figure = Figure()
         self.canvas = FigureCanvasAgg(self.figure)
         self.axes = self.figure.add_subplot(111)
-        # Call back customer to display it's data on our figure.
+        #lines = {'linestyle': 'None'}
+        #self.axes.rc('lines', **lines)
+        # Call back customer to display its data on our figure.
         self.show()
         if image_basename != None:
             self.save_image(image_basename)
@@ -157,7 +160,10 @@ class GUIViewer(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnAbout, m_about)
         self.Bind(wx.EVT_MENU, self.OnClose, m_exit)
 
-        self.canvas.Bind(wx.EVT_KEY_DOWN, self.onKeyEvent)
+        #if (hasattr(customer, 'OnKey') and inspect.isfunction(customer.OnKey)):
+        if hasattr(customer, 'OnKey'):
+            print("binding customer key handler")
+            self.canvas.Bind(wx.EVT_KEY_DOWN, customer.OnKey)
         
         #
         # Add toolbar
@@ -187,11 +193,12 @@ class GUIViewer(wx.Frame):
     def OnClose(self, event):
         self.Close(True)
 
-    def onKeyEvent(self,event=None):
+    # unused, but serves as a model for what the customer may implement
+    def onKey(self,event=None):
         """ capture , act upon keystroke events"""
         if event == None: return
         #print(str(event))
-        #key = event.KeyCode()
+        #key = event.GetKeyCode()
         #print(key)
         
     def add_toolbar(self):

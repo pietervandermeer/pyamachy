@@ -39,9 +39,6 @@ import wxversion
 # comment out the following to use wx rather than wxagg
 matplotlib.use('WXAgg')
 
-def onclick(event):
-    print('button=%d, x=%d, y=%d, xdata=%f, ydata=%f' % (event.button, event.x, event.y, event.xdata, event.ydata))
-
 # read simudark data for specified orbit (only ch8 data!)
 def read_simudark(orbit, ao=None, lc=None, amp1=None):
     dict = {}
@@ -226,7 +223,6 @@ def check_eclipse_calib(pixnr):
     print(d)
     #plt.scatter(state_phases, readouts_ch8[:,pixnr]-funk[:,pixnr])
     fig = plt.figure()
-    cid = fig.canvas.mpl_connect('button_press_event', onclick)
     darklevel = (simudark['ao']+simudark['lc']*(1.0-petcorr))[pixnr]
     plt.suptitle("dark level = "+str(darklevel))
     plt.scatter(state_phases, readouts_ch8[:,pixnr], color='g')

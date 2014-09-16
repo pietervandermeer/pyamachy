@@ -201,6 +201,90 @@ class orbitfilter:
         mask = numpy.invert(mask)
         return mask
 
+# reads extracted state executions from database
+def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
+
+    if in_orbitlist is None:
+        if len(orbitrange) is not 2:
+            print('read_extracted_states: orbitrange should have 2 elements')
+            return
+
+    dict = {}
+
+    #
+    # obtain indices to entries of the requested orbit and state
+    #
+
+    fid = h5py.File(calib_db, 'r') # generates an exception
+    gid = fid["State_"+str('%02d'%state_id)] # generates an exception
+    mt_did = gid['metaTable']
+    orbitlist = (gid['orbitList'])[:]
+    if in_orbitlist is not None:
+        #metaindx = orbitlist = in_orbitlist
+        metaindx = numpy.in1d(orbitlist, in_orbitlist)
+    else:
+        print('orbitrange=', orbitrange)
+        metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
+        print(metaindx)
+
+    if metaindx[0].size is 0:
+        print('read_extracted_states: orbit range not present in database')
+        dict['status'] = -1
+        return dict
+
+    mtbl = mt_did[metaindx]
+    dict['mtbl'] = mtbl
+
+    if readoutMean:
+        ds_did      = gid['readoutMean']
+        dict['readoutMean'] = ds_did[metaindx,:]
+
+    if readoutNoise:
+        ds_did       = gid['readoutNoise']
+        dict['readoutNoise'] = ds_did[metaindx,:]
+
+    if orbitList:
+        ds_did = gid['orbitList']
+        dict['orbitList'] = ds_did[metaindx]
+
+    #
+    # find the pet and coadd (TODO: do for multiple orbits)
+    #
+
+    orbit = orbitrange[0]
+    clusoff1 = [0,10,1014,1024]
+    ds_did = gid['clusConf']
+    clusconf = ds_did[:]
+    orbit_start = clusconf['orbit'][:]
+    cluspets = clusconf['pet'][:]
+    cluscoad = clusconf['coaddf'][:]
+    n_defchange = orbit_start.size 
+    pet = numpy.empty(1024)
+    coadd = numpy.empty(1024)
+    if n_defchange is 1:
+        orbit_end = [100000]
+    if n_defchange > 1:
+        orbit_end = numpy.append(numpy.delete(orbit_start,0,0), 100000)
+    if n_defchange is 0:
+        print("oh noes!")
+        return(dict)
+    for i_change in range(n_defchange):
+        if orbit_start[i_change] > orbit or orbit_end[i_change] < orbit:
+            continue
+        cluspets = cluspets[i_change]
+        cluscoad = cluscoad[i_change]
+        for i_clus in range(3): #ch8 is last 3 clusters.. always 40 clusters
+          clus_start = clusoff1[i_clus]
+          clus_end   = clusoff1[i_clus+1]-1
+          pet[clus_start:clus_end] = cluspets[i_clus+37]
+          coadd[clus_start:clus_end] = cluscoad[i_clus+37]
+    dict['pet'] = pet
+    dict['coadd'] = coadd
+
+    fid.close()
+    dict['status'] = 0
+    return(dict)
+
 # test function. not a unit test.. yet
 if __name__ == '__main__':
     print "\norbit filter test"
