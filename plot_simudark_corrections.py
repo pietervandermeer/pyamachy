@@ -32,7 +32,6 @@ import matplotlib
 
 from viewers import GUIViewer, DumpingViewer
 import envisat
-import sciamachy_module
 import distinct_colours
 from sciamachy_module import NonlinCorrector, read_extracted_states
 from simudark_module import simudark_orbvar_function, read_simudark, test_simudark_orbvar_function
@@ -162,7 +161,7 @@ class PlotSimudarkCorrection():
         
         fname = self.cfg['db_dir']+self.cfg['extract_fname']
         orbrange = [self.args.orbit,self.args.orbit]
-        states = read_extracted_states(orbrange, 26, fname, readoutMean=True, readoutNoise=True)
+        states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
         state_mtbl = states['mtbl']
         print(states['readoutMean'].shape)
         readouts = states['readoutMean']

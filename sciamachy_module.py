@@ -5,7 +5,7 @@ import ConfigParser
 
 """
 functions and classes related to SCIAMACHY operation and instrument
-2011 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
+2011, 2014 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
 """
 
 channels = ['1','2','3','4','5','6','6+','7','8']

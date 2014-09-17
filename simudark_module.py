@@ -1,5 +1,6 @@
 import numpy
 import h5py
+from scipy.optimize import curve_fit
 
 # read simudark data for specified orbit (only ch8 data!)
 def read_simudark(orbit, ao=None, lc=None, amp1=None, sig_ao=None, sig_lc=None, sig_amp1=None):
@@ -94,6 +95,29 @@ def simudark_orbvar_function(d, n_harmonics=1):
 
     return func.T
 
+# version for scipy's curve_fit()
+def simudark_orbvar_function_(phases, pet, amp1, amp2, phase1, phase2):
+
+    exec_count = phases.size
+    n_pixels   = amp1.size
+    func       = numpy.empty((n_pixels, exec_count))
+
+    pet_amp   = numpy.matrix(pet * amp1)
+    amp2      = amp2 * pet_amp
+    # TODO: expand amp2 to channel width if not already so?!
+    #if n_elements(amp2) eq n_pixels/1024 then $
+    #    amp2 = rebin(amp2,n_pixels,/sample)
+
+    # correct fundamental frequency
+    phases1 = numpy.matrix(phases+phase1) # orbital phases shifted by fundamental phase shift
+    func = pet_amp.T * numpy.cos(2*numpy.pi*phases1)
+
+    # correct 1st harmonic
+    phases2 = numpy.matrix(phases+phase2)
+    func += amp2.T * numpy.cos(4*numpy.pi*phases2)
+
+    return func.T
+
 # just a smoke test.. 
 def test_simudark_orbvar_function():
     d = {}
@@ -104,3 +128,7 @@ def test_simudark_orbvar_function():
     d['phase1'] = .1
     d['phase2'] = .2
     print(simudark_orbvar_function(d))
+
+def fit_simudark(x, y):
+    popt, pcov = curve_fit(simudark_orbvar_function_, x, y)
+    return
