@@ -217,10 +217,19 @@ n_pix = 1024
 x = all_state_phases, pet, coadd
 fitobj = kmpfit.Fitter(residuals=scia_dark_residuals, data=(x, all_readouts))
 
+aoinfo = [dict(fixed=False) for x in range(n_pix)]
+lcinfo = [dict(fixed=False) for x in range(n_pix)]
+amp1info = [dict(fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
+trendinfo = [dict(Fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
+amp2info = dict(Fixed=False, limits=[-1.,+1.])
+phase1info = dict(fixed=False, limits=[-3.,+3.])
+phase2info = dict(fixed=False, limits=[-3.,+3.])
+fitobj.parinfo = aoinfo+lcinfo+amp1info+trendinfo+[amp2info,phase1info,phase2info]
+
 # prepare initial parameters
 ao0 = numpy.zeros(n_pix) + 4000
 dc0 = numpy.zeros(n_pix) + 4000
-amp1_0 = numpy.zeros(n_pix)
+amp1_0 = numpy.zeros(n_pix) + 10
 trend0 = numpy.zeros(n_pix)
 amp2_0 = 0.1
 phase_offset1 = 0
