@@ -50,14 +50,14 @@ def scia_dark_fun(p, x):
      
      Inputs:
      
-     p:    tuple containing the function parameters
-           * p[0]: numpy array, analog offset in BU for 1024 pixels
-           * p[1]: numpy array, dark current in BU/s for 1024 pixels
-           * p[2]: numpy array, orbital variation amplitude in BU/s
-           * p[3]: numpy array, linear orbit-to-orbit trend in BU/s
-           * p[4]: scalar, orbital variation first overtone relative amplitude in BU/s
-           * p[5]: scalar, orbital variation fundamental frequency phase offset in range [0-1]
-           * p[6]: scalar, orbital variation first overtone phase offset in range [0-1]
+     p:    1d numpy array containing the function parameters
+           * p[0:1024]: numpy array, analog offset in BU for 1024 pixels
+           * p[1024:2048]: numpy array, dark current in BU/s for 1024 pixels
+           * p[2048:3072]: numpy array, orbital variation amplitude in BU/s
+           * p[3072:4096]: numpy array, linear orbit-to-orbit trend in BU/s
+           * p[4096]: scalar, orbital variation first overtone relative amplitude in BU/s
+           * p[4097]: scalar, orbital variation fundamental frequency phase offset in range [0-1]
+           * p[4098]: scalar, orbital variation first overtone phase offset in range [0-1]
      x:    tuple of independent variables (numpy arrays of length n_x)
            * x[0]: numpy array, orbit phase in range (can be [0..1] but also beyond for trending)
            * x[1]: numpy array, pixel exposure time in s
@@ -75,9 +75,18 @@ def scia_dark_fun(p, x):
     """
 
     # extract parameters from p
-    analog_offset, dark_current, orb_var_amplitude1, orb_trend, orb_var_amplitude2, phase_offset1, phase_offset2 = p
-    n_a = analog_offset.size #nr of pixels
-    aones = numpy.matrix(numpy.ones(n_a))
+    n_pix = 1024
+    analog_offset      = numpy.matrix(p[0:n_pix])
+    dark_current       = numpy.matrix(p[n_pix:2*n_pix])
+    orb_var_amplitude1 = p[2*n_pix:3*n_pix]
+    orb_trend          = numpy.matrix(p[3*n_pix:4*n_pix])
+    orb_var_amplitude2 = p[4*n_pix]
+    phase_offset1      = p[4*n_pix+1]
+    phase_offset2      = p[4*n_pix+2]
+    orb_var_amp1_mat   = numpy.matrix(orb_var_amplitude1)
+
+    n_pix = analog_offset.size #nr of pixels
+    aones = numpy.matrix(numpy.ones(n_pix))
     # transform to matrices 
     analog_offset = numpy.matrix(analog_offset)
     dark_current = numpy.matrix(dark_current)
@@ -90,21 +99,21 @@ def scia_dark_fun(p, x):
     n_x = orbit_phase.size # nr of datapoints
     xones = numpy.matrix(numpy.ones(n_x))
 
-    print('orbit_phase=', orbit_phase)
-    print('PET=', pixel_exposure_time)
-    print('co_adding_factor=', co_adding_factor)
-    print('n_a=', n_a,' n_x=', n_x)
+    #print('orbit_phase=', orbit_phase)
+    #print('PET=', pixel_exposure_time)
+    #print('co_adding_factor=', co_adding_factor)
+    #print('n_pix=', n_pix,' n_x=', n_x)
 	
     # Generate an array for the modeled block of detector read-outs:
-    darks = numpy.zeros([n_a, n_x])
+    darks = numpy.zeros([n_pix, n_x])
 
     #
     # Calculate the dark current:
     #
   
-    print('dark_current.shape=',dark_current.shape)
-    print('len(orb_var_amplitude1)=',len(orb_var_amplitude1))
-    print('shapes=',darks.shape,dark_current.T.shape,xones.shape)
+    #print('dark_current.shape=',dark_current.shape)
+    #print('len(orb_var_amplitude1)=',len(orb_var_amplitude1))
+    #print('shapes=',darks.shape,dark_current.T.shape,xones.shape)
 
     darks += dark_current.T * xones
 
@@ -121,18 +130,18 @@ def scia_dark_fun(p, x):
     #print('darks (no pet, no ao)=', darks)
 
     # Multiply with pixel exposure time:
-    print('pet.shape=',pixel_exposure_time.shape)
-    print('aones.shape=',aones.shape)
+    #print('pet.shape=',pixel_exposure_time.shape)
+    #print('aones.shape=',aones.shape)
     pet_mat = aones.T * pixel_exposure_time
-    print('pet_mat.shape=',pet_mat.shape)
-    print('darks.shape=',darks.shape)
+    #print('pet_mat.shape=',pet_mat.shape)
+    #print('darks.shape=',darks.shape)
     darks *= pet_mat
 
     # Add the analog offset:
     darks += (analog_offset.T * xones)
 
     # Multiply with co-adding factor:
-    print('co_adding_factor.shape=',co_adding_factor.shape)
+    #print('co_adding_factor.shape=',co_adding_factor.shape)
     coad_mat = aones.T * numpy.matrix(co_adding_factor) 
     darks *= coad_mat
 
@@ -145,7 +154,7 @@ def scia_dark_residuals(p, data):
      - x: independent variables (list of three equally sized numpy arrays)
      - y: dependent variables 
     """
-    print("BLABLA")
+    print("ITER")
     x, y = data 
     return y - scia_dark_fun(p, x)
 
@@ -153,8 +162,10 @@ def scia_dark_residuals(p, data):
 
 nlc = NonlinCorrector()
 
-orbit = 24000
+orbit = 27022
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
+
+print("ready")
 
 # orbit 1
 orbrange = [orbit,orbit]
@@ -163,14 +174,13 @@ state_mtbl = states['mtbl']
 print(states['readoutMean'].shape)
 readouts = states['readoutMean']
 noise = states['readoutNoise']
-print(readouts.shape)
-n_exec = readouts.shape[0]
-for idx_exec in range(n_exec):
+n_exec1 = readouts.shape[0]
+for idx_exec in range(n_exec1):
     readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-pet = states['pet'][0] + numpy.zeros(n_exec)
-coadd = states['coadd'][0] + numpy.zeros(n_exec)
+pet = states['pet'][0]
+coadd = states['coadd'][0]
 readouts_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd[0])
+noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
 state_phases = state_mtbl['orbitPhase'][:]
 
 # orbit 2
@@ -180,33 +190,31 @@ state_mtbl = states['mtbl']
 print(states['readoutMean'].shape)
 readouts = states['readoutMean']
 noise = states['readoutNoise']
-print(readouts.shape)
-for idx_exec in range(readouts.shape[0]):
+n_exec2 = readouts.shape[0]
+for idx_exec in range(n_exec2):
     readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
 readouts2_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-noise2_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd[0])
+noise2_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
 state_phases2 = state_mtbl['orbitPhase'][:]
 
 # combine orbit data
+n_exec = n_exec1 + n_exec2
 all_state_phases = numpy.concatenate((state_phases, state_phases2))
 all_readouts = numpy.concatenate((readouts_, readouts2_)) #.flatten()
 all_sigmas = numpy.concatenate((noise_, noise2_)) #.flatten()
+
+pet = numpy.zeros(n_exec) + pet
+coadd = numpy.zeros(n_exec) + coadd
 
 #
 # fit it
 #
 
+print("steady")
+
 # prepare parameters and fitter
 n_pix = 1024
 x = all_state_phases, pet, coadd
-print(x)
-print('len(x)=', len(x))
-print("isinstance(x,..) ", isinstance(x, numpy.ndarray))
-print("isinstance(x[0],..) ", isinstance(x[0], numpy.ndarray))
-print("isinstance(x[1],..) ", isinstance(x[1], numpy.ndarray))
-print("isinstance(x[2],..) ", isinstance(x[2], numpy.ndarray))
-print('all_readouts.shape=',all_readouts.shape)
-print('all_sigmas.shape=',all_sigmas.shape)
 fitobj = kmpfit.Fitter(residuals=scia_dark_residuals, data=(x, all_readouts))
 
 # prepare initial parameters
@@ -217,17 +225,9 @@ trend0 = numpy.zeros(n_pix)
 amp2_0 = 0.1
 phase_offset1 = 0
 phase_offset2 = 0
-p0 = ao0, dc0, amp1_0, trend0, amp2_0, phase_offset1, phase_offset2
-print('len(p0)=',len(p0))
-#print('p0.size=',p0.size)
-print("isinstance(p0,..) ", isinstance(p0, numpy.ndarray))
-print("isinstance(p0[0],..) ", isinstance(p0[0], numpy.ndarray))
-print("isinstance(p0[1],..) ", isinstance(p0[1], numpy.ndarray))
-print("isinstance(p0[2],..) ", isinstance(p0[2], numpy.ndarray))
-print("isinstance(p0[3],..) ", isinstance(p0[3], numpy.ndarray))
-#print("isinstance(p0[4],..) ", isinstance(p0[4], numpy.ndarray))
-#print("isinstance(p0[5],..) ", isinstance(p0[5], numpy.ndarray))
-#print("isinstance(p0[6],..) ", isinstance(p0[6], numpy.ndarray))
+p0 = numpy.concatenate((ao0, dc0, amp1_0, trend0, (amp2_0, phase_offset1, phase_offset2)))
+
+print("go!")
 
 # ..and fit
 fitobj.fit(params0=p0)
@@ -235,3 +235,5 @@ if (fitobj.status <= 0):
    print('Error message = ', fitobj.message)
 else:
    print("Optimal parameters: ", fitobj.params)
+
+print("done")
