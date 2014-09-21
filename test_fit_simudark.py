@@ -21,14 +21,45 @@ from __future__ import print_function
 
 import numpy
 from numpy import cos, pi
-from scipy.optimize import curve_fit
 from kapteyn import kmpfit
+import matplotlib.pyplot as plt
 
 from sciamachy_module import NonlinCorrector, read_extracted_states
 from simudark_module import simudark_orbvar_function_
 
 
 #- functions -------------------------------------------------------------------
+
+def scia_dark_fun1(p, x):
+    ao = p[0]
+    dc = p[1]
+    amp1 = p[2] # wave amp, relative to dark
+    trend = p[3] # relative to dark
+    phase_shift1 = p[4]
+    #amp2 = p[5]
+    #phase_shift2 = p[6]
+    #print(ao,dc,amp1,trend,phase_shift1)
+    # Extract exposure information and orbit phase from x
+    orbit_phase, pet, coadd = x
+    #print(orbit_phase)
+    n_x = orbit_phase.size # nr of datapoints
+
+    dark = numpy.zeros(n_x)
+    dark += dc
+    #print(amp1 * cos(2*pi*(orbit_phase + phase_shift1)))
+    dark += dc * amp1 * cos(2*pi*(orbit_phase + phase_shift1))
+    #print(amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2)))
+    #dark += amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2))
+    dark += dc * trend * orbit_phase
+    return (dark*pet + ao)*coadd    
+
+def scia_dark_residuals1(p, data):
+    x, y, yerr = data 
+    return y - scia_dark_fun1(p, x)
+
+def scia_dark_residuals1e(p, data):
+    x, y, yerr = data 
+    return (y - scia_dark_fun1(p, x)) / yerr
 
 def scia_dark_fun(p, x):
     """
@@ -164,6 +195,7 @@ nlc = NonlinCorrector()
 
 orbit = 27022
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
+n_pix = 1024
 
 print("ready")
 
@@ -174,14 +206,35 @@ state_mtbl = states['mtbl']
 print(states['readoutMean'].shape)
 readouts = states['readoutMean']
 noise = states['readoutNoise']
-n_exec1 = readouts.shape[0]
-for idx_exec in range(n_exec1):
+n_exec1_8 = readouts.shape[0]
+for idx_exec in range(n_exec1_8):
     readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-pet = states['pet'][0]
-coadd = states['coadd'][0]
-readouts_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
-state_phases = state_mtbl['orbitPhase'][:]
+pet8 = states['pet'][0]
+coadd8 = states['coadd'][0]
+readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
+state8_phases = state_mtbl['orbitPhase'][:]
+
+states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
+state_mtbl = states63['mtbl']
+print(states['readoutMean'].shape)
+readouts = states63['readoutMean']
+noise = states63['readoutNoise']
+n_exec1_63 = readouts.shape[0]
+for idx_exec in range(n_exec1_63):
+    readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
+pet63 = states63['pet'][0]
+print('pet63=',pet63)
+coadd63 = states['coadd'][0]
+readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
+state63_phases = state_mtbl['orbitPhase'][:]
+
+# glue data from first orbit
+n_exec1 = n_exec1_8 + n_exec1_63
+state_phases1 = numpy.concatenate((state8_phases, state63_phases)) 
+readouts1 = numpy.concatenate((readouts8_, readouts63_))
+noise1 = numpy.concatenate((noise8_, noise63_))
 
 # orbit 2
 orbrange = [orbit+1,orbit+1]
@@ -190,21 +243,42 @@ state_mtbl = states['mtbl']
 print(states['readoutMean'].shape)
 readouts = states['readoutMean']
 noise = states['readoutNoise']
-n_exec2 = readouts.shape[0]
-for idx_exec in range(n_exec2):
+n_exec2_8 = readouts.shape[0]
+for idx_exec in range(n_exec2_8):
     readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-readouts2_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-noise2_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
+readouts2_8 = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+noise2_8 = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
 state_phases2 = state_mtbl['orbitPhase'][:]
+
+states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
+state_mtbl = states63['mtbl']
+print(states['readoutMean'].shape)
+readouts = states63['readoutMean']
+noise = states63['readoutNoise']
+n_exec2_63 = readouts.shape[0]
+for idx_exec in range(n_exec2_63):
+    readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
+pet63 = states63['pet'][0]
+print('pet63=',pet63)
+coadd63 = states['coadd'][0]
+readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
+state63_phases = state_mtbl['orbitPhase'][:]
+
+# glue data from second orbit
+n_exec2 = n_exec2_8 + n_exec2_63
+state_phases2 = numpy.concatenate((state_phases2, state63_phases)) 
+readouts2 = numpy.concatenate((readouts2_8, readouts63_))
+noise2 = numpy.concatenate((noise2_8, noise63_))
 
 # combine orbit data
 n_exec = n_exec1 + n_exec2
-all_state_phases = numpy.concatenate((state_phases, state_phases2))
-all_readouts = numpy.concatenate((readouts_, readouts2_)) #.flatten()
-all_sigmas = numpy.concatenate((noise_, noise2_)) #.flatten()
+all_state_phases = numpy.concatenate((state_phases1, state_phases2+1.0))
+all_readouts = numpy.concatenate((readouts1, readouts2))
+all_sigmas = numpy.concatenate((noise1, noise2))
 
-pet = numpy.zeros(n_exec) + pet
-coadd = numpy.zeros(n_exec) + coadd
+pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63, numpy.zeros(n_exec2_8)+pet8, numpy.zeros(n_exec2_8)+pet63))
+coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+coadd63, numpy.zeros(n_exec2_8)+coadd8, numpy.zeros(n_exec2_63)+coadd63))
 
 #
 # fit it
@@ -212,37 +286,130 @@ coadd = numpy.zeros(n_exec) + coadd
 
 print("steady")
 
-# prepare parameters and fitter
-n_pix = 1024
-x = all_state_phases, pet, coadd
-fitobj = kmpfit.Fitter(residuals=scia_dark_residuals, data=(x, all_readouts))
+if True:
 
-aoinfo = [dict(fixed=False) for x in range(n_pix)]
-lcinfo = [dict(fixed=False) for x in range(n_pix)]
-amp1info = [dict(fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
-trendinfo = [dict(Fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
-amp2info = dict(Fixed=False, limits=[-1.,+1.])
-phase1info = dict(fixed=False, limits=[-3.,+3.])
-phase2info = dict(fixed=False, limits=[-3.,+3.])
-fitobj.parinfo = aoinfo+lcinfo+amp1info+trendinfo+[amp2info,phase1info,phase2info]
+    x = all_state_phases, pet, coadd
+    print(all_state_phases.shape)
+    print(pet.shape)
+    print(pet)
+    print(coadd.shape)
+    #fitobj = kmpfit.Fitter(residuals=scia_dark_residuals1, data=(x, all_readouts[:,pixnr], all_sigmas[:,pixnr]))
+    
+    aoinfo = dict(fixed=False, limits=[0,10000])
+    lcinfo = dict(fixed=False, limits=[-100000.,+100000.])
+    amp1info = dict(fixed=False, limits=[-.5,+.5])
+    trendinfo = dict(fixed=False, limits=[-.1,+.1])
+    amp2info = dict(fixed=False, limits=[-1.,+1.])
+    phase1info = dict(fixed=False, limits=[-3.,+3.])
+    phase2info = dict(fixed=False, limits=[-3.,+3.])
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
 
-# prepare initial parameters
-ao0 = numpy.zeros(n_pix) + 4000
-dc0 = numpy.zeros(n_pix) + 4000
-amp1_0 = numpy.zeros(n_pix) + 10
-trend0 = numpy.zeros(n_pix)
-amp2_0 = 0.1
-phase_offset1 = 0
-phase_offset2 = 0
-p0 = numpy.concatenate((ao0, dc0, amp1_0, trend0, (amp2_0, phase_offset1, phase_offset2)))
+    # prepare initial parameters
+    ao0 = 4000
+    dc0 = 4000
+    amp1_0 = .005
+    trend0 = 0
+    amp2_0 = 0.1
+    phase_offset1 = 0
+    phase_offset2 = 0
+    p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1]) #, phase_offset2
 
-print("go!")
+    print("go!")
 
-# ..and fit
-fitobj.fit(params0=p0)
-if (fitobj.status <= 0):
-   print('Error message = ', fitobj.message)
+    # ..and fit
+    n_done = 0
+    statuses = numpy.zeros(n_pix)
+    res_phases = numpy.zeros(n_pix)
+    for pixnr in range(n_pix):
+        #print(pixnr)
+        pix_readouts = all_readouts[:,pixnr]
+        pix_sigmas = all_sigmas[:,pixnr]
+        #print('readouts = ', pix_readouts)
+        #print('sigmas = ', pix_sigmas)
+        #print(numpy.sum(pix_sigmas))
+        if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
+            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            n_done += 1
+        else:
+            continue
+        #fitobj.fit(params0=p0)
+        print(pixnr, fitobj.params[4] % 1, fitobj.status, fitobj.message)
+        statuses[pixnr] = fitobj.status
+        res_phases[pixnr] = fitobj.params[4]
+        if (fitobj.status <= 0):
+           print('Error message = ', fitobj.message)
+           quit()
+        #else:
+        #   print("Optimal parameters: ", fitobj.params)
+
+    channel_phase = numpy.median(res_phases[numpy.where(statuses >= 0) and numpy.where(res_phases != -3)] % 1)
+    print('channel median phase =', channel_phase)
+    phase1info = dict(fixed=True, limits=[-3.,+3.])
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
+    p0[4] = channel_phase
+
+    #
+    # pass 2 - fix phase shift
+    #
+
+    for pixnr in range(n_pix):
+        #print(pixnr)
+        pix_readouts = all_readouts[:,pixnr]
+        pix_sigmas = all_sigmas[:,pixnr]
+        #print('readouts = ', pix_readouts)
+        #print('sigmas = ', pix_sigmas)
+        #print(numpy.sum(pix_sigmas))
+        if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
+            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            n_done += 1
+        else:
+            continue
+        #fitobj.fit(params0=p0)
+        print(pixnr, fitobj.params[4] % 1, fitobj.status, fitobj.message)
+        statuses[pixnr] = fitobj.status
+        res_phases[pixnr] = fitobj.params[4]
+        if (fitobj.status <= 0):
+           print('Error message = ', fitobj.message)
+           quit()
+
+    #plt.cla()
+    #plt.scatter(all_state_phases, all_readouts[:,pixnr])
+    #plt.show()
+
 else:
-   print("Optimal parameters: ", fitobj.params)
+
+    # prepare parameters and fitter
+    n_pix = 1024
+    x = all_state_phases, pet, coadd
+    fitobj = kmpfit.Fitter(residuals=scia_dark_residuals, data=(x, all_readouts))
+
+    aoinfo = [dict(fixed=False) for x in range(n_pix)]
+    lcinfo = [dict(fixed=False) for x in range(n_pix)]
+    amp1info = [dict(fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
+    trendinfo = [dict(Fixed=False, limits=[-1000.,+1000.]) for x in range(n_pix)]
+    amp2info = dict(Fixed=False, limits=[-1.,+1.])
+    phase1info = dict(fixed=False, limits=[-3.,+3.])
+    phase2info = dict(fixed=False, limits=[-3.,+3.])
+    fitobj.parinfo = aoinfo+lcinfo+amp1info+trendinfo+[amp2info,phase1info,phase2info]
+
+    # prepare initial parameters
+    ao0 = numpy.zeros(n_pix) + 4000
+    dc0 = numpy.zeros(n_pix) + 4000
+    amp1_0 = numpy.zeros(n_pix) + 10
+    trend0 = numpy.zeros(n_pix)
+    amp2_0 = 0.1
+    phase_offset1 = 0
+    phase_offset2 = 0
+    p0 = numpy.concatenate((ao0, dc0, amp1_0, trend0, (amp2_0, phase_offset1, phase_offset2)))
+
+    print("go!")
+
+    # ..and fit
+    fitobj.fit(params0=p0)
+    if (fitobj.status <= 0):
+       print('Error message = ', fitobj.message)
+    else:
+       print("Optimal parameters: ", fitobj.params)
 
 print("done")
+
