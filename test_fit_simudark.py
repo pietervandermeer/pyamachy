@@ -24,12 +24,13 @@ from numpy import cos, pi
 from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
+from envisat import PhaseConverter
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr
-from simudark_module import simudark_orbvar_function_
 
 nlc = NonlinCorrector()
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
+phaseconv = PhaseConverter()
 
 #- functions -------------------------------------------------------------------
 
@@ -69,6 +70,7 @@ def extract_05_10_dark_states(orbit):
     orbrange = [orbit,orbit]
     states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
+    jds1_8 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
     readouts = states['readoutMean']
     noise = states['readoutNoise']
@@ -83,6 +85,7 @@ def extract_05_10_dark_states(orbit):
 
     states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states63['mtbl']
+    jds1_63 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
     readouts = states63['readoutMean']
     noise = states63['readoutNoise']
@@ -106,6 +109,7 @@ def extract_05_10_dark_states(orbit):
     orbrange = [orbit+1,orbit+1]
     states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
+    jds2_8 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
     readouts = states['readoutMean']
     noise = states['readoutNoise']
@@ -118,6 +122,7 @@ def extract_05_10_dark_states(orbit):
 
     states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states63['mtbl']
+    jds2_63 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
     readouts = states63['readoutMean']
     noise = states63['readoutNoise']
@@ -145,15 +150,21 @@ def extract_05_10_dark_states(orbit):
 
     pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63, numpy.zeros(n_exec2_8)+pet8, numpy.zeros(n_exec2_63)+pet63))
     coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+coadd63, numpy.zeros(n_exec2_8)+coadd8, numpy.zeros(n_exec2_63)+coadd63))
+    jds = numpy.concatenate((jds1_8, jds1_63, jds2_8, jds2_63))
 
-    return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas
+    # convert all juliandates to eclipse phases
+    print(jds.size, jds)
+    ephases = phaseconv.get_phase(jds)
+    ephases[n_exec1:n_exec] += 1.0 # second orbit should have orbit phase +1
+
+    return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases
 
 # fit dark model to two neighbouring monthly calibration orbits
 def fit_monthly(orbit):
 
     print("ready")
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas = extract_05_10_dark_states(orbit)
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
     #
     # fit it
@@ -325,12 +336,41 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
 
     return x, lcs, trends, all_readouts, all_sigmas
 
-def compute_trend(orbit, aos):
+# compute thermal background trend between two normal orbits 
+# also computes actual thermal background offset (excluding trend or oscillation)
+def compute_trend(orbit, aos, amps):
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas = extract_05_10_dark_states(orbit)
+    # get all dark states from two orbits
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
-    #
+    # divide by coadding factor, subtract analog offset and divide by exposure time to get thermal background in BU/s
+    thermal_background = all_readouts
+    thermal_background /= numpy.matrix(coadd).T * numpy.ones(n_pix)
+    thermal_background -= (numpy.matrix(aos).T * numpy.ones(n_exec)).T
+    thermal_background /= numpy.matrix(pet).T * numpy.ones(n_pix)
 
+    trends = numpy.empty(n_pix) + numpy.nan
+    lcs = numpy.empty(n_pix) + numpy.nan
+
+    # loop over all channel pixels
+    for pixnr in range(n_pix):
+        if aos[pixnr] is 0:
+            continue
+        if numpy.all(all_sigmas[:,pixnr] is 0):
+            continue 
+        background = thermal_background[:,pixnr]
+        if numpy.isnan(numpy.sum(background)):
+            continue 
+        idx1 = numpy.where(ephases < 1.0)
+        idx2 = numpy.where(ephases >= 1.0)
+        avg1 = numpy.mean(background[idx1])
+        avg2 = numpy.mean(background[idx2])
+        phi1 = numpy.mean(ephases[idx1])
+        phi2 = numpy.mean(ephases[idx2])
+        lcs[pixnr] = avg1 - amps[pixnr]*cos(phi1)
+        trends[pixnr] = (avg2-avg1)/(phi2-phi1)
+
+    return trends, lcs
 
 #- main ------------------------------------------------------------------------
 
@@ -347,25 +387,32 @@ print('trend (lc fraction)=', trends)
 #plt.scatter(numpy.arange(1024), lcs, c='g')
 #plt.show()
 
-x, lcs, trends, readouts, sigmas = fit_eclipse_orbit(27050, aos, lcs, amps, channel_phase)
+# x, lcs, trends, readouts, sigmas = fit_eclipse_orbit(27050, aos, lcs, amps, channel_phase)
 
-pts_per_orbit = 50
-n_orbits = 2
-total_pts = n_orbits*pts_per_orbit
-orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
-pet05 = numpy.ones(total_pts)*.5 - petcorr
-pet10 = numpy.ones(total_pts)*1.0 - petcorr
-coadd = numpy.ones(total_pts)
+# pts_per_orbit = 50
+# n_orbits = 2
+# total_pts = n_orbits*pts_per_orbit
+# orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
+# pet05 = numpy.ones(total_pts)*.5 - petcorr
+# pet10 = numpy.ones(total_pts)*1.0 - petcorr
+# coadd = numpy.ones(total_pts)
 
-readout_phases, readout_pets, readout_coadd = x
+# readout_phases, readout_pets, readout_coadd = x
 
-pixnr = 590
-x05 = orbphase, pet05, coadd
-x10 = orbphase, pet10, coadd
-p = aos[pixnr], lcs[pixnr], amps[pixnr], trends[pixnr], channel_phase
+# pixnr = 590
+# x05 = orbphase, pet05, coadd
+# x10 = orbphase, pet10, coadd
+# p = aos[pixnr], lcs[pixnr], amps[pixnr], trends[pixnr], channel_phase
+# plt.cla()
+# plt.plot(orbphase, scia_dark_fun1(p, x05))
+# plt.plot(orbphase, scia_dark_fun1(p, x10))
+# plt.errorbar(readout_phases, readouts[:,pixnr], yerr=sigmas[:,pixnr], ls='none', marker='o')
+# plt.show()
+
+trends_ecl, lcs_ecl = compute_trend(27040, aos, amps)
+
+print(trends_ecl.size, trends_ecl)
 plt.cla()
-plt.plot(orbphase, scia_dark_fun1(p, x05))
-plt.plot(orbphase, scia_dark_fun1(p, x10))
-plt.errorbar(readout_phases, readouts[:,pixnr], yerr=sigmas[:,pixnr], ls='none', marker='o')
+plt.scatter(numpy.arange(n_pix), trends_ecl, c='b')
+plt.scatter(numpy.arange(n_pix), lcs_ecl, c='g')
 plt.show()
-

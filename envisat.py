@@ -57,9 +57,9 @@ class PhaseConverter:
     """
 
     def __init__(self):
-        self.phaselib = ct.CDLL('testlib.so')
+        self.phaselib = ct.CDLL('phaselib.so')
 
-    def get_phase(jds, eclipseMode=True):
+    def get_phase(self, jds, eclipseMode=True):
         """
         input: jds: numpy array of julian dates
                eclipseMode: boolean flag to indicate eclipse mode or polar mode
@@ -76,5 +76,5 @@ class PhaseConverter:
         jds = jds.astype(numpy.float64)
         jds_c = jds.ctypes.data_as(ct.POINTER(ct.c_double))
 
-        phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
+        self.phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
         return phases
