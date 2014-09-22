@@ -232,7 +232,7 @@ def check_eclipse_calib(pixnr):
 
 # plot dark state executions (detrend and overplot them)
 def check_darkstates():
-    testlib = ct.CDLL('testlib.so')
+    testlib = ct.CDLL('phaselib.so')
 
     #testlib.myprint()
     #d = ct.c_double(1.234)

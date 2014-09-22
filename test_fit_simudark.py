@@ -24,14 +24,12 @@ from numpy import cos, pi
 from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
-from sciamachy_module import NonlinCorrector, read_extracted_states
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr
 from simudark_module import simudark_orbvar_function_
 
 nlc = NonlinCorrector()
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
-# TODO: should be in scia module
-petcorr = 1.18125e-3
 
 #- functions -------------------------------------------------------------------
 
@@ -148,7 +146,6 @@ def extract_05_10_dark_states(orbit):
     pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63, numpy.zeros(n_exec2_8)+pet8, numpy.zeros(n_exec2_63)+pet63))
     coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+coadd63, numpy.zeros(n_exec2_8)+coadd8, numpy.zeros(n_exec2_63)+coadd63))
 
-    pet -= petcorr
     return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas
 
 # fit dark model to two neighbouring monthly calibration orbits
@@ -327,6 +324,12 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
     print("done")
 
     return x, lcs, trends, all_readouts, all_sigmas
+
+def compute_trend(orbit, aos):
+
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas = extract_05_10_dark_states(orbit)
+
+    #
 
 
 #- main ------------------------------------------------------------------------

@@ -1,4 +1,22 @@
 # -*- coding: iso-8859-1 -*-
+#
+# COPYRIGHT (c) 2014 SRON (pieter.van.der.meer@sron.nl)
+#
+#   This is free software; you can redistribute it and/or modify it
+#   under the terms of the GNU General Public License, version 2, as
+#   published by the Free Software Foundation.
+#
+#   The software is distributed in the hope that it will be useful, but
+#   WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#   General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program; if not, write to the Free Software
+#   Foundation, Inc., 59 Temple Place - Suite 330, 
+#   Boston, MA  02111-1307, USA.
+#
+
 import numpy
 import h5py
 import ConfigParser
@@ -19,6 +37,8 @@ pixranges = [numpy.arange(1024), \
              1024*6+numpy.arange(1024), \
              1024*7+numpy.arange(1024), \
             ]
+# exposure time error
+petcorr = 1.18125e-3
 
 mask_criteria = ['combined','RTS','darkCurrentError','darkCurrentSat','invalid','residual']
 
@@ -278,7 +298,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
           clus_end   = clusoff1[i_clus+1]-1
           pet[clus_start:clus_end] = cluspets[i_clus+37]
           coadd[clus_start:clus_end] = cluscoad[i_clus+37]
-    dict['pet'] = pet
+    dict['pet'] = pet - petcorr # TODO: ok for all states??
     dict['coadd'] = coadd
 
     fid.close()

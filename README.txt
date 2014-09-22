@@ -3,7 +3,7 @@ Pyamachy product generators and viewers
 ---------------------------------------
 
 Author: Pieter van der Meer, SRON - Netherlands Institute for Space Research, 
-        2011
+        2011, 2014
 
 -------
 Purpose
@@ -30,6 +30,9 @@ The generators, viewers and other files
 
 pixelmask_module.py: generates SDMF 3.1 pixelmask (100% identical values, but
  different structure from SDMF 3.1 IDL database)
+
+simudark_module.py: generates SDMF 3.2 simudark (v2) product, including 
+ orbit-to-orbit trend.
 
 - viewers:
 
