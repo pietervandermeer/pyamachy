@@ -179,8 +179,6 @@ class PlotSimudarkCorrection():
         # load simudark
         #
 
-        petcorr = 1.18125e-3
-        pet -= petcorr
         print("pet=",pet)
         simudark = read_simudark(self.args.orbit, ao=True, lc=True, amp1=True, sig_ao=True, sig_lc=True, sig_amp1=True)
         simudark_mtbl = simudark['mtbl']
