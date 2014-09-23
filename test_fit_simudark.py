@@ -177,7 +177,6 @@ def extract_dark_states(orbit, shortFlag=False, longFlag=True):
     if longFlag:
         n_exec_l, all_state_phases_l, pet_l, coadd_l, all_readouts_l, all_sigmas_l, ephases_l = extract_05_10_dark_states(orbit)
 
-    print(n_exec_s, n_exec_l)
     if shortFlag and longFlag:
         n_exec = n_exec_s+n_exec_l
         all_state_phases = numpy.concatenate((all_state_phases_s, all_state_phases_l))
@@ -314,11 +313,6 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, **kwargs):
 
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
 
-#    if short:
-#        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_short_dark_states(orbit)
-#    else:
-#        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
-
     #
     # fit it
     #
@@ -380,12 +374,6 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, **kwargs):
 # also computes actual thermal background offset (excluding trend or oscillation)
 def compute_trend(orbit, aos, amps, phaseshift, **kwargs):
 
-    # get all dark states from two orbits
-    #if short:
-    #    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_short_dark_states(orbit)
-    #else:
-    #    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
-
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
 
     # divide by coadding factor, subtract analog offset and divide by exposure time to get thermal background in BU/s
@@ -421,8 +409,8 @@ def compute_trend(orbit, aos, amps, phaseshift, **kwargs):
 #- main ------------------------------------------------------------------------
 
 monthly_orbit = 27022
-normal_orbit = 27022 # 27085
-use_short_states = True
+normal_orbit = 27085
+use_short_states = False
 use_long_states = True
 pixnr = 590
 
@@ -444,6 +432,8 @@ print('ao=', aos[pixnr], 'lcs=', lcs[pixnr], 'amp=', amps[pixnr], 'trend=', tren
 # fit constant part of lc and trend
 x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase, shortFlag=use_short_states, longFlag=use_long_states)
 #trends_fit = numpy.zeros(n_pix) # just to illustrate difference
+
+readout_phases, readout_pets, readout_coadd = x
 
 # directly compute constant part of lc and trend for averaged eclipse data points
 trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase, shortFlag=use_short_states, longFlag=use_long_states)
