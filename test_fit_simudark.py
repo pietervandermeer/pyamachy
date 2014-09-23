@@ -277,7 +277,7 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
 
     print("ready")
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas = extract_05_10_dark_states(orbit)
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
     #
     # fit it
@@ -338,7 +338,7 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
 
 # compute thermal background trend between two normal orbits 
 # also computes actual thermal background offset (excluding trend or oscillation)
-def compute_trend(orbit, aos, amps):
+def compute_trend(orbit, aos, amps, phaseshift):
 
     # get all dark states from two orbits
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
@@ -367,14 +367,18 @@ def compute_trend(orbit, aos, amps):
         avg2 = numpy.mean(background[idx2])
         phi1 = numpy.mean(ephases[idx1])
         phi2 = numpy.mean(ephases[idx2])
-        lcs[pixnr] = avg1 - amps[pixnr]*cos(phi1)
+        lcs[pixnr] = avg1 - amps[pixnr]*cos(2*pi*(phi1+phaseshift))
+
         trends[pixnr] = (avg2-avg1)/(phi2-phi1)
 
     return trends, lcs
 
 #- main ------------------------------------------------------------------------
 
-channel_phase, aos, lcs, amps, trends = fit_monthly(27022)
+monthly_orbit = 27022
+normal_orbit = 27085
+
+channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit)
 
 print('channel_phase=', channel_phase)
 print('aos=', aos)
@@ -387,17 +391,19 @@ print('trend (lc fraction)=', trends)
 #plt.scatter(numpy.arange(1024), lcs, c='g')
 #plt.show()
 
-# x, lcs, trends, readouts, sigmas = fit_eclipse_orbit(27050, aos, lcs, amps, channel_phase)
+# fit constant part of lc and trend
+x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase)
+trends_fit = numpy.zeros(n_pix)
 
-# pts_per_orbit = 50
-# n_orbits = 2
-# total_pts = n_orbits*pts_per_orbit
-# orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
-# pet05 = numpy.ones(total_pts)*.5 - petcorr
-# pet10 = numpy.ones(total_pts)*1.0 - petcorr
-# coadd = numpy.ones(total_pts)
+pts_per_orbit = 50
+n_orbits = 2
+total_pts = n_orbits*pts_per_orbit
+orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
+pet05 = numpy.ones(total_pts)*.5 - petcorr
+pet10 = numpy.ones(total_pts)*1.0 - petcorr
+coadd = numpy.ones(total_pts)
 
-# readout_phases, readout_pets, readout_coadd = x
+readout_phases, readout_pets, readout_coadd = x
 
 # pixnr = 590
 # x05 = orbphase, pet05, coadd
@@ -409,10 +415,24 @@ print('trend (lc fraction)=', trends)
 # plt.errorbar(readout_phases, readouts[:,pixnr], yerr=sigmas[:,pixnr], ls='none', marker='o')
 # plt.show()
 
-trends_ecl, lcs_ecl = compute_trend(27040, aos, amps)
+# directly compute constant part of lc and trend for averaged eclipse data points
+trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase)
 
-print(trends_ecl.size, trends_ecl)
+# print(trends_ecl.size, trends_ecl)
+# plt.cla()
+# plt.scatter(numpy.arange(n_pix), trends_ecl, c='b')
+# plt.scatter(numpy.arange(n_pix), lcs_ecl, c='g')
+# plt.show()
+
+pixnr = 560
+x05 = orbphase, pet05, coadd
+x10 = orbphase, pet10, coadd
+pfit = aos[pixnr], lcs_fit[pixnr], amps[pixnr], trends_fit[pixnr], channel_phase
+plin = aos[pixnr], lcs_lin[pixnr], amps[pixnr], trends_lin[pixnr], channel_phase
 plt.cla()
-plt.scatter(numpy.arange(n_pix), trends_ecl, c='b')
-plt.scatter(numpy.arange(n_pix), lcs_ecl, c='g')
+plt.plot(orbphase, scia_dark_fun1(pfit, x05), c='b')
+plt.plot(orbphase, scia_dark_fun1(pfit, x10), c='g')
+plt.plot(orbphase, scia_dark_fun1(plin, x05), c='r')
+plt.plot(orbphase, scia_dark_fun1(plin, x10), c='y')
+plt.errorbar(readout_phases, readouts[:,pixnr], yerr=sigmas[:,pixnr], ls='none', marker='o')
 plt.show()

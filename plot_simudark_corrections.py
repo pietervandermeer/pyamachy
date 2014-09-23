@@ -33,7 +33,7 @@ import matplotlib
 from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
-from sciamachy_module import NonlinCorrector, read_extracted_states
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr
 from simudark_module import simudark_orbvar_function, read_simudark, test_simudark_orbvar_function
 
 # Used to guarantee to use at least Wx2.8
@@ -184,12 +184,14 @@ class PlotSimudarkCorrection():
         simudark_mtbl = simudark['mtbl']
         d = {}
         d['phases'] = self.state_phases
-        d['pet'] = numpy.array(pet) * numpy.ones(1024) # TODO: get pet from state data!
+        d['pet'] = numpy.array(pet) * numpy.ones(1024)
         d['amp1'] = simudark['amp1'][:]
         d['amp2'] = simudark_mtbl['AMP2'] #[:]
         d['phase1'] = simudark_mtbl['PHASE1'] #[:]
         d['phase2'] = simudark_mtbl['PHASE2'] #[:]
-        funk = numpy.array(simudark_orbvar_function(d))
+        funk = numpy.array(simudark_orbvar_function(d)) # orbvar at dark state execution phases
+        d['phases'] = numpy.arange(100)/100.
+        curv = numpy.array(simudark_orbvar_function(d)) # continuous orbvar curve
         # add ao and lc offsets to orbital variation
         print("funk.shape=", funk.shape)
         darklevel = simudark['ao']+simudark['lc']*pet
@@ -197,7 +199,13 @@ class PlotSimudarkCorrection():
         print("darklevel.shape=", darklevel.shape)
         for i in range(funk.shape[0]):
             funk[i,:] += darklevel
+        for i in range(curv.shape[0]):
+            curv[i,:] += darklevel
         self.simudark = funk
+        self.simucurv = curv
+        self.simuao = simudark['ao']
+        self.simuamp = simudark['amp1']
+        self.simulc = simudark['lc']
 
         self.loaded = True
 
@@ -220,13 +228,20 @@ class PlotSimudarkCorrection():
         fig.set_title("Simudark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")
         fig.set_xlabel("Orbit phase")
         fig.set_ylabel("Dark signal (BU)")
+        fig.set_xlim([0,1])
         pixnr = self.args.pixnr
+        ao = self.simuao[pixnr]
+        lc = self.simulc[pixnr]
+        amp = self.simuamp[pixnr]*1.3
+        cons = ao+lc*(1-petcorr)
+        fig.set_ylim([cons-amp, cons+amp])
         print(numpy.sqrt(self.noise[:,pixnr]))
         print(numpy.sqrt(self.simunoise[pixnr]))
         fig.errorbar(self.state_phases, self.readouts[:,pixnr], yerr=numpy.sqrt(self.noise[:,pixnr]),
             ls='none', color=self.cols[0], marker='o', label='State execution')
         fig.errorbar(self.state_phases, self.simudark[:,pixnr], yerr=numpy.sqrt(self.simunoise[pixnr]), 
-            ls='none', color=self.cols[1], marker='o', label='Simudark orbvar')
+            ls='none', color=self.cols[1], marker='o', label='Simudark @ states')
+        fig.plot(numpy.arange(100)/100., self.simucurv[:,pixnr], label='Simudark curve', color=self.cols[1])
         if self.args.legend:
             fig.legend(loc='upper left', scatterpoints=10)
             #fig.legend()
