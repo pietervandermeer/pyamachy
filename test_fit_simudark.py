@@ -55,7 +55,9 @@ def scia_dark_fun1(p, x):
     #print(amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2)))
     #dark += amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2))
     dark += trend * orbit_phase
-    return (dark*pet + ao)*coadd    
+
+#    return (dark*pet + ao)*coadd    
+    return dark*pet + ao
 
 def scia_dark_residuals1(p, data):
     x, y, yerr = data 
@@ -65,10 +67,10 @@ def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
 
-def extract_05_10_dark_states(orbit):
+def extract_two_dark_states(orbit, stateid1, stateid2):
     # orbit 1
     orbrange = [orbit,orbit]
-    states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
+    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
     jds1_8 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
@@ -78,12 +80,13 @@ def extract_05_10_dark_states(orbit):
     for idx_exec in range(n_exec1_8):
         readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
     pet8 = states['pet'][0]
+    print('pet8=',pet8)
     coadd8 = states['coadd'][0]
     readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
     noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
     state8_phases = state_mtbl['orbitPhase'][:]
 
-    states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
+    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states63['mtbl']
     jds1_63 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
@@ -107,7 +110,7 @@ def extract_05_10_dark_states(orbit):
 
     # orbit 2
     orbrange = [orbit+1,orbit+1]
-    states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
+    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
     jds2_8 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
@@ -120,7 +123,7 @@ def extract_05_10_dark_states(orbit):
     noise2_8 = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
     state_phases2 = state_mtbl['orbitPhase'][:]
 
-    states63 = read_extracted_states(orbrange, 63, fname, readoutMean=True, readoutNoise=True)
+    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states63['mtbl']
     jds2_63 = state_mtbl['julianDay'][:]
     print(states['readoutMean'].shape)
@@ -149,22 +152,33 @@ def extract_05_10_dark_states(orbit):
     all_sigmas = numpy.concatenate((noise1, noise2))
 
     pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63, numpy.zeros(n_exec2_8)+pet8, numpy.zeros(n_exec2_63)+pet63))
-    coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+coadd63, numpy.zeros(n_exec2_8)+coadd8, numpy.zeros(n_exec2_63)+coadd63))
+    coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+coadd8, numpy.zeros(n_exec1_63)+coadd63, numpy.zeros(n_exec2_8)+coadd8, numpy.zeros(n_exec2_63)+coadd63))
     jds = numpy.concatenate((jds1_8, jds1_63, jds2_8, jds2_63))
 
     # convert all juliandates to eclipse phases
-    print(jds.size, jds)
+    #print(jds.size, jds)
     ephases = phaseconv.get_phase(jds)
     ephases[n_exec1:n_exec] += 1.0 # second orbit should have orbit phase +1
 
     return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases
 
+# TODO: later orbits have different dark state definitions..
+def extract_05_10_dark_states(orbit):
+    return extract_two_dark_states(orbit, 8, 63)
+
+# TODO: later orbits have different dark state definitions..
+def extract_short_dark_states(orbit):
+    return extract_two_dark_states(orbit, 26, 46)
+
 # fit dark model to two neighbouring monthly calibration orbits
-def fit_monthly(orbit):
+def fit_monthly(orbit, short=False):
 
     print("ready")
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
+    if short:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_short_dark_states(orbit)
+    else:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
     #
     # fit it
@@ -176,7 +190,7 @@ def fit_monthly(orbit):
     print(all_state_phases.shape)
     print(pet.shape)
     print(pet)
-    print(coadd.shape)
+    print(coadd)
     #fitobj = kmpfit.Fitter(residuals=scia_dark_residuals1, data=(x, all_readouts[:,pixnr], all_sigmas[:,pixnr]))
     
     aoinfo = dict(fixed=False, limits=[0,10000])
@@ -191,7 +205,7 @@ def fit_monthly(orbit):
     # prepare initial parameters
     ao0 = 4000
     dc0 = 4000
-    amp1_0 = .005
+    amp1_0 = 10
     trend0 = 0
     amp2_0 = 0.1
     phase_offset1 = 0
@@ -273,11 +287,14 @@ def fit_monthly(orbit):
 
 # fit dark model to an orbits with normal (eclipse) dark states
 # use parameters computed from nearest calibration orbits
-def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
+def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, short=False):
 
     print("ready")
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
+    if short:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_short_dark_states(orbit)
+    else:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
     #
     # fit it
@@ -338,14 +355,17 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift):
 
 # compute thermal background trend between two normal orbits 
 # also computes actual thermal background offset (excluding trend or oscillation)
-def compute_trend(orbit, aos, amps, phaseshift):
+def compute_trend(orbit, aos, amps, phaseshift, short=False):
 
     # get all dark states from two orbits
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
+    if short:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_short_dark_states(orbit)
+    else:
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_05_10_dark_states(orbit)
 
     # divide by coadding factor, subtract analog offset and divide by exposure time to get thermal background in BU/s
     thermal_background = all_readouts
-    thermal_background /= numpy.matrix(coadd).T * numpy.ones(n_pix)
+    #thermal_background /= numpy.matrix(coadd).T * numpy.ones(n_pix) # this was already done.. 
     thermal_background -= (numpy.matrix(aos).T * numpy.ones(n_exec)).T
     thermal_background /= numpy.matrix(pet).T * numpy.ones(n_pix)
 
@@ -376,31 +396,40 @@ def compute_trend(orbit, aos, amps, phaseshift):
 #- main ------------------------------------------------------------------------
 
 monthly_orbit = 27022
-normal_orbit = 27085
+normal_orbit = 27022 # 27085
+use_short_states = False
+pixnr = 590
 
-channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit)
+channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit, short=use_short_states)
 
 print('channel_phase=', channel_phase)
 print('aos=', aos)
 print('lc=', lcs)
-print('amp (lc fraction)=', amps)
-print('trend (lc fraction)=', trends)
+print('amp=', amps)
+print('trend=', trends)
 
 #plt.cla()
 #plt.scatter(numpy.arange(1024), aos, c='b')
 #plt.scatter(numpy.arange(1024), lcs, c='g')
 #plt.show()
 
+print('ao=', aos[pixnr], 'lcs=', lcs[pixnr], 'amp=', amps[pixnr], 'trend=', trends[pixnr])
+
 # fit constant part of lc and trend
-x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase)
-trends_fit = numpy.zeros(n_pix)
+x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase, short=use_short_states)
+trends_fit = numpy.zeros(n_pix) # just to illustrate difference
 
 pts_per_orbit = 50
 n_orbits = 2
 total_pts = n_orbits*pts_per_orbit
 orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
-pet05 = numpy.ones(total_pts)*.5 - petcorr
-pet10 = numpy.ones(total_pts)*1.0 - petcorr
+# TODO: pretty hard, could be more flexible!
+if use_short_states:
+    pet05 = numpy.ones(total_pts)*(.0625 - petcorr)
+    pet10 = numpy.ones(total_pts)*(.125 - petcorr)
+else:
+    pet05 = numpy.ones(total_pts)*(.5 - petcorr)
+    pet10 = numpy.ones(total_pts)*(1.0 - petcorr)
 coadd = numpy.ones(total_pts)
 
 readout_phases, readout_pets, readout_coadd = x
@@ -416,7 +445,7 @@ readout_phases, readout_pets, readout_coadd = x
 # plt.show()
 
 # directly compute constant part of lc and trend for averaged eclipse data points
-trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase)
+trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase, short=use_short_states)
 
 # print(trends_ecl.size, trends_ecl)
 # plt.cla()
@@ -424,11 +453,13 @@ trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase)
 # plt.scatter(numpy.arange(n_pix), lcs_ecl, c='g')
 # plt.show()
 
-pixnr = 560
 x05 = orbphase, pet05, coadd
 x10 = orbphase, pet10, coadd
+
 pfit = aos[pixnr], lcs_fit[pixnr], amps[pixnr], trends_fit[pixnr], channel_phase
 plin = aos[pixnr], lcs_lin[pixnr], amps[pixnr], trends_lin[pixnr], channel_phase
+#plin = aos[pixnr], lcs_lin[pixnr], amps[pixnr], 0, channel_phase
+
 plt.cla()
 plt.plot(orbphase, scia_dark_fun1(pfit, x05), c='b')
 plt.plot(orbphase, scia_dark_fun1(pfit, x10), c='g')
