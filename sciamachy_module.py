@@ -17,6 +17,9 @@
 #   Boston, MA  02111-1307, USA.
 #
 
+from __future__ import print_function
+from __future__ import division
+
 import numpy
 import h5py
 import ConfigParser
@@ -221,6 +224,17 @@ class orbitfilter:
         mask = numpy.invert(mask)
         return mask
 
+    # return closest monthly calibration orbit
+    def get_closest_monthly(self, orbit):
+        delta = numpy.abs(self.monthlies - orbit)
+        idx = numpy.argmin(delta)
+        print(self.monthlies.shape)
+        print(idx.shape, numpy.isscalar(idx), idx)
+        if numpy.isscalar(idx):
+            return self.monthlies[idx]
+        else:
+            return self.monthlies[idx[0]]
+
 # reads extracted state executions from database
 def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
 
@@ -307,33 +321,33 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
 
 # test function. not a unit test.. yet
 if __name__ == '__main__':
-    print "\norbit filter test"
+    print("\norbit filter test")
     filt = orbitfilter()
     ra = numpy.arange(51000)
     mo_mask = filt.get_monthly_orbit_filter(ra)
     qu_mask = filt.get_quality_orbit_filter(ra)
     ra2 = ra[mo_mask]
     ra3 = ra[qu_mask]
-    print ra2.shape,ra3.shape
+    print(ra2.shape, ra3.shape)
 
-    print "\nmemory correction test"
+    print("\nmemory correction test")
     mc = MemCorrector()
     a = numpy.arange(8192)*4
     b = mc.correct(a)
-    print b[0:1024]
-    print b[1024:2*1024]
-    print b[2*1024:3*1024]
-    print b[3*1024:4*1024]
-    print b[4*1024:5*1024]
+    print(b[0:1024])
+    print(b[1024:2*1024])
+    print(b[2*1024:3*1024])
+    print(b[3*1024:4*1024])
+    print(b[4*1024:5*1024])
 
-    print "\nnon-linearity correction test"
+    print("\nnon-linearity correction test")
     nlc = NonlinCorrector()
     b= nlc.correct(a)
-    print b[0:1024]
-    print b[1024:2*1024]
-    print b[2*1024:3*1024]
-    print b[3*1024:4*1024]
-    print b[4*1024:5*1024]
-    print b[5*1024:6*1024]
-    print b[6*1024:7*1024]
-    print b[7*1024:8*1024]
+    print(b[0:1024])
+    print(b[1024:2*1024])
+    print(b[2*1024:3*1024])
+    print(b[3*1024:4*1024])
+    print(b[4*1024:5*1024])
+    print(b[5*1024:6*1024])
+    print(b[6*1024:7*1024])
+    print(b[7*1024:8*1024])

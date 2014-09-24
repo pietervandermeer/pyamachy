@@ -31,12 +31,15 @@ The generators, viewers and other files
 pixelmask_module.py: generates SDMF 3.1 pixelmask (100% identical values, but
  different structure from SDMF 3.1 IDL database)
 
-simudark_module.py: generates SDMF 3.2 simudark (v2) product, including 
- orbit-to-orbit trend.
+vardark_module.py: generates SDMF 3.2 dark product for channel8, including 
+ orbit-to-orbit trend and orbital variation.
 
 - viewers:
 
-plot_pixelmask_evolution: viewer for SDMF3.1 pixelmask evolution.
+plot_vardark.py: viewer for new vardark product (channel 8 darks, with 
+orbit-to-orbit trend and orbital variation). 
+
+plot_pixelmask_evolution.py: viewer for SDMF3.1 pixelmask evolution.
 
 plot_transmission30_evo.py: SDMF3.0 transmission product viewer as evolution 
 over years.
@@ -66,8 +69,8 @@ default.cfg: configuration file for SDMF 3.0 code
 darklimb_io_module.py: module that contains darklimb database reader function
 read_statedark_module.py: module that contains statedark db reader function
 viewers.py: module that contains viewer classes GUIViewer and DumpingViewer
-sciamachy_module.py: module that contains instrument parameters and low-level
- calibration routines.
+sciamachy_module.py: module that contains instrument parameters and, low-level
+ calibration routines, and orbit finding and filtering.
 envisat.py: module that contains data and methods related to the Envisat 
  platform: currently only conversion of orbit nr -> date.
 

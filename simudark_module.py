@@ -1,3 +1,26 @@
+# -*- coding: iso-8859-1 -*-
+#
+# COPYRIGHT (c) 2014 SRON (pieter.van.der.meer@sron.nl)
+#
+#   This is free software; you can redistribute it and/or modify it
+#   under the terms of the GNU General Public License, version 2, as
+#   published by the Free Software Foundation.
+#
+#   The software is distributed in the hope that it will be useful, but
+#   WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#   General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program; if not, write to the Free Software
+#   Foundation, Inc., 59 Temple Place - Suite 330, 
+#   Boston, MA  02111-1307, USA.
+#
+
+"""
+module to read simudark data (generated IDL-based SDMF)
+"""
+
 import numpy
 import h5py
 from scipy.optimize import curve_fit
@@ -129,6 +152,7 @@ def test_simudark_orbvar_function():
     d['phase2'] = .2
     print(simudark_orbvar_function(d))
 
+# untested..
 def fit_simudark(x, y):
     popt, pcov = curve_fit(simudark_orbvar_function_, x, y)
     return

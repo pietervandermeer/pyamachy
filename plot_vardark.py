@@ -17,6 +17,10 @@
 #   Boston, MA  02111-1307, USA.
 #
 
+"""
+plots computed vardark product and overplots state executions.
+"""
+
 from __future__ import print_function
 from __future__ import division
 
@@ -27,14 +31,13 @@ import logging
 import h5py
 import numpy
 import wx
-import ctypes as ct 
 import matplotlib
 
 from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
-from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr
-from simudark_module import simudark_orbvar_function, read_simudark, test_simudark_orbvar_function
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
+from vardark_module import scia_dark_fun1, extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend
 
 # Used to guarantee to use at least Wx2.8
 import wxversion
@@ -47,10 +50,7 @@ matplotlib.use('WXAgg')
 
 #- functions -------------------------------------------------------------------
 
-# class that plots simudark corrections (SDMF3.1) for ch8.
-# uses Viewer class to do the actual visualisation. uses config file and handles
-# command-line arguments.
-class PlotSimudarkCorrection():
+class VarDarkPlotter():
 
     def __init__(self):
 
@@ -66,7 +66,7 @@ class PlotSimudarkCorrection():
         #
         
         parser = argparse.ArgumentParser(description=
-                 'Displays SCIAMACHY dark state measurements corrected by simudark product per pixel per orbit')
+                 'Displays SCIAMACHY dark state measurements corrected by vardark product per pixel per orbit')
         parser.add_argument('-o', '--output', dest='output_fname', type=str)
         parser.add_argument('--config', dest='config_file', type=file, 
                             default='default3.1.cfg')
@@ -81,7 +81,7 @@ class PlotSimudarkCorrection():
         self.args = parser.parse_args()
 
         # TODO configurable
-        self.args.orbit = 24000
+        self.args.orbit = 24044
         self.args.pixnr = 620
 
         #
@@ -94,6 +94,10 @@ class PlotSimudarkCorrection():
             msg = "There was a missing option in the configuration file '"
             logging.exception(msg+self.args.config_fname+"'!")
             raise
+
+        #
+        # extract orbit list and turn into strings (for the gui)
+        #
 
         fname = self.cfg['db_dir']+self.cfg['extract_fname']
         fextract = h5py.File(fname, 'r')
@@ -109,10 +113,11 @@ class PlotSimudarkCorrection():
         self.cols = distinct_colours.get_distinct(6)
 
         #
-        # instantiate non-linearity corrector
+        # instantiate helper objects
         #
 
         self.nlc = NonlinCorrector()
+        self.ofilt = orbitfilter()
 
         #
         # Pass control options on to GUIViewer
@@ -127,7 +132,7 @@ class PlotSimudarkCorrection():
                               'handler':self.OnToggleLegend,'type':'bool',
                               'value':self.args.legend},
                              ]
-            self.view = GUIViewer(self, title="Dark-corrected darks", 
+            self.view = GUIViewer(self, title="Vardark-corrected darks", 
                                   image_basename=self.args.output_fname,
                                   params=control_params)
     
@@ -156,56 +161,76 @@ class PlotSimudarkCorrection():
     def load(self):
 
         #
-        # load dark state executions (entire ch8) and correct non-linearity
-        #
-        
-        fname = self.cfg['db_dir']+self.cfg['extract_fname']
-        orbrange = [self.args.orbit,self.args.orbit]
-        states = read_extracted_states(orbrange, 8, fname, readoutMean=True, readoutNoise=True)
-        state_mtbl = states['mtbl']
-        print(states['readoutMean'].shape)
-        readouts = states['readoutMean']
-        noise = states['readoutNoise']
-        print(readouts.shape)
-        for idx_exec in range(readouts.shape[0]):
-            readouts[idx_exec,:] = self.nlc.correct(readouts[idx_exec,:])
-        pet = states['pet'][0]
-        coadd = states['coadd'][0]
-        self.readouts = readouts[:,7*1024:8*1024] #/ coadd (was already done?)
-        self.noise = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
-        self.state_phases = state_mtbl['orbitPhase'][:]
-
-        #
-        # load simudark
+        # compute vardark
         #
 
-        print("pet=",pet)
-        simudark = read_simudark(self.args.orbit, ao=True, lc=True, amp1=True, sig_ao=True, sig_lc=True, sig_amp1=True)
-        simudark_mtbl = simudark['mtbl']
-        d = {}
-        d['phases'] = self.state_phases
-        d['pet'] = numpy.array(pet) * numpy.ones(1024)
-        d['amp1'] = simudark['amp1'][:]
-        d['amp2'] = simudark_mtbl['AMP2'] #[:]
-        d['phase1'] = simudark_mtbl['PHASE1'] #[:]
-        d['phase2'] = simudark_mtbl['PHASE2'] #[:]
-        funk = numpy.array(simudark_orbvar_function(d)) # orbvar at dark state execution phases
-        d['phases'] = numpy.arange(100)/100.
-        curv = numpy.array(simudark_orbvar_function(d)) # continuous orbvar curve
-        # add ao and lc offsets to orbital variation
-        print("funk.shape=", funk.shape)
-        darklevel = simudark['ao']+simudark['lc']*pet
-        self.simunoise = simudark['sig_ao'] + simudark['sig_lc']*pet*pet + simudark['sig_amp1']
-        print("darklevel.shape=", darklevel.shape)
-        for i in range(funk.shape[0]):
-            funk[i,:] += darklevel
-        for i in range(curv.shape[0]):
-            curv[i,:] += darklevel
-        self.simudark = funk
-        self.simucurv = curv
-        self.simuao = simudark['ao']
-        self.simuamp = simudark['amp1']
-        self.simulc = simudark['lc']
+        normal_orbit = self.args.orbit
+        monthly_orbit = self.ofilt.get_closest_monthly(self.args.orbit)
+        use_short_states = False
+        use_long_states = True
+        pixnr = 590
+
+        channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states)
+        self.aos = aos
+        self.lcs = lcs
+        self.amps = amps
+        self.trends = trends
+        print('channel_phase=', channel_phase)
+        print('aos=', aos)
+        print('lc=', lcs)
+        print('amp=', amps)
+        print('trend=', trends)
+
+        #plt.cla()
+        #plt.scatter(numpy.arange(1024), aos, c='b')
+        #plt.scatter(numpy.arange(1024), lcs, c='g')
+        #plt.show()
+
+        print('ao=', aos[pixnr], 'lc=', lcs[pixnr], 'amp=', amps[pixnr], 'trend=', trends[pixnr])
+
+        # fit constant part of lc and trend
+        x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase, shortFlag=use_short_states, longFlag=use_long_states)
+        #trends_fit = numpy.zeros(n_pix) # just to illustrate difference
+        self.lcs_fit = lcs_fit
+        self.trends_fit = trends_fit
+        self.readouts = readouts
+        self.sigmas = sigmas 
+        self.channel_phase = channel_phase
+
+        self.readout_phases, readout_pets, readout_coadd = x
+
+        # directly compute constant part of lc and trend for averaged eclipse data points
+        trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase, shortFlag=use_short_states, longFlag=use_long_states)
+        self.trends_lin = trends_lin
+        self.lcs_lin = lcs_lin
+
+        # print("pet=",pet)
+        # simudark = read_simudark(self.args.orbit, ao=True, lc=True, amp1=True, sig_ao=True, sig_lc=True, sig_amp1=True)
+        # simudark_mtbl = simudark['mtbl']
+        # d = {}
+        # d['phases'] = self.state_phases
+        # d['pet'] = numpy.array(pet) * numpy.ones(1024)
+        # d['amp1'] = simudark['amp1'][:]
+        # d['amp2'] = simudark_mtbl['AMP2'] #[:]
+        # d['phase1'] = simudark_mtbl['PHASE1'] #[:]
+        # d['phase2'] = simudark_mtbl['PHASE2'] #[:]
+        # funk = numpy.array(simudark_orbvar_function(d)) # orbvar at dark state execution phases
+        # d['phases'] = numpy.arange(100)/100.
+        # curv = numpy.array(simudark_orbvar_function(d)) # continuous orbvar curve
+        # # add ao and lc offsets to orbital variation
+        # print("funk.shape=", funk.shape)
+        # darklevel = simudark['ao']+simudark['lc']*pet
+        # self.simunoise = simudark['sig_ao'] + simudark['sig_lc']*pet*pet + simudark['sig_amp1']
+        # print("darklevel.shape=", darklevel.shape)
+        # for i in range(funk.shape[0]):
+        #     funk[i,:] += darklevel
+        # for i in range(curv.shape[0]):
+        #     curv[i,:] += darklevel
+        # self.simudark = funk
+        # self.simucurv = curv
+        # self.simuao = simudark['ao']
+        # self.simuamp = simudark['amp1']
+        # self.simulc = simudark['lc']
 
         self.loaded = True
 
@@ -223,27 +248,45 @@ class PlotSimudarkCorrection():
         #
         # plot data
         #
+
+        # print(trends_ecl.size, trends_ecl)
+        # plt.cla()
+        # plt.scatter(numpy.arange(n_pix), trends_ecl, c='b')
+        # plt.scatter(numpy.arange(n_pix), lcs_ecl, c='g')
+        # plt.show()
+
+        pixnr = self.args.pixnr
+
+        pfit = self.aos[pixnr], self.lcs_fit[pixnr], self.amps[pixnr], self.trends_fit[pixnr], self.channel_phase
+        plin = self.aos[pixnr], self.lcs_lin[pixnr], self.amps[pixnr], self.trends_lin[pixnr], self.channel_phase
+        #plin = aos[pixnr], lcs_lin[pixnr], amps[pixnr], 0, channel_phase
+
+        pts_per_orbit = 50
+        n_orbits = 2
+        total_pts = n_orbits*pts_per_orbit
+        orbphase = numpy.arange(total_pts)/float(pts_per_orbit)
+        coadd = numpy.ones(total_pts)
+        pets = numpy.array([1/16., 1/8., 1/2., 1]) - petcorr
+        cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
+
+
         
         fig.cla()
         fig.set_title("Simudark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")
         fig.set_xlabel("Orbit phase")
         fig.set_ylabel("Dark signal (BU)")
-        fig.set_xlim([0,1])
-        pixnr = self.args.pixnr
-        ao = self.simuao[pixnr]
-        lc = self.simulc[pixnr]
-        amp = self.simuamp[pixnr]*1.3
-        cons = ao+lc*(1-petcorr)
-        fig.set_ylim([cons-amp, cons+amp])
-        print(numpy.sqrt(self.noise[:,pixnr]))
-        print(numpy.sqrt(self.simunoise[pixnr]))
-        fig.errorbar(self.state_phases, self.readouts[:,pixnr], yerr=numpy.sqrt(self.noise[:,pixnr]),
-            ls='none', color=self.cols[0], marker='o', label='State execution')
-        fig.errorbar(self.state_phases, self.simudark[:,pixnr], yerr=numpy.sqrt(self.simunoise[pixnr]), 
-            ls='none', color=self.cols[1], marker='o', label='Simudark @ states')
-        fig.plot(numpy.arange(100)/100., self.simucurv[:,pixnr], label='Simudark curve', color=self.cols[1])
+        fig.set_xlim([0,2])
+        #fig.set_ylim([cons-amp, cons+amp])
+        #print(numpy.sqrt(self.noise[:,pixnr]))
+        #print(numpy.sqrt(self.simunoise[pixnr]))
+        for i in range(len(pets)):
+            x = orbphase, numpy.zeros(total_pts)+pets[i], coadd
+            fig.plot(orbphase, scia_dark_fun1(pfit, x), c=cols[i], label="fit orbvar "+str(pets[i]))
+            fig.plot(orbphase, scia_dark_fun1(plin, x), c=cols[i], marker='+', label="lin orbvar "+str(pets[i]))
+        fig.errorbar(self.readout_phases, self.readouts[:,pixnr], yerr=self.sigmas[:,pixnr], ls='none', marker='o', label="dark states")
+
         if self.args.legend:
-            fig.legend(loc='upper left', scatterpoints=10)
+            fig.legend(loc='upper right', scatterpoints=10)
             #fig.legend()
 
     # execute this when Show legend check box is clicked
@@ -311,6 +354,6 @@ if __name__ == '__main__':
         def OnInit(self):
             return True
 
-    plotter = PlotSimudarkCorrection()
+    plotter = VarDarkPlotter()
     app = TestApp(0)
     app.MainLoop()
