@@ -202,34 +202,6 @@ class VarDarkPlotter():
         self.trends_lin = trends_lin
         self.lcs_lin = lcs_lin
 
-        # print("pet=",pet)
-        # simudark = read_simudark(self.args.orbit, ao=True, lc=True, amp1=True, sig_ao=True, sig_lc=True, sig_amp1=True)
-        # simudark_mtbl = simudark['mtbl']
-        # d = {}
-        # d['phases'] = self.state_phases
-        # d['pet'] = numpy.array(pet) * numpy.ones(1024)
-        # d['amp1'] = simudark['amp1'][:]
-        # d['amp2'] = simudark_mtbl['AMP2'] #[:]
-        # d['phase1'] = simudark_mtbl['PHASE1'] #[:]
-        # d['phase2'] = simudark_mtbl['PHASE2'] #[:]
-        # funk = numpy.array(simudark_orbvar_function(d)) # orbvar at dark state execution phases
-        # d['phases'] = numpy.arange(100)/100.
-        # curv = numpy.array(simudark_orbvar_function(d)) # continuous orbvar curve
-        # # add ao and lc offsets to orbital variation
-        # print("funk.shape=", funk.shape)
-        # darklevel = simudark['ao']+simudark['lc']*pet
-        # self.simunoise = simudark['sig_ao'] + simudark['sig_lc']*pet*pet + simudark['sig_amp1']
-        # print("darklevel.shape=", darklevel.shape)
-        # for i in range(funk.shape[0]):
-        #     funk[i,:] += darklevel
-        # for i in range(curv.shape[0]):
-        #     curv[i,:] += darklevel
-        # self.simudark = funk
-        # self.simucurv = curv
-        # self.simuao = simudark['ao']
-        # self.simuamp = simudark['amp1']
-        # self.simulc = simudark['lc']
-
         self.loaded = True
 
     # plot method. this should be about the same as in your stand-alone script.
@@ -266,8 +238,6 @@ class VarDarkPlotter():
         coadd = numpy.ones(total_pts)
         pets = numpy.array([1/16., 1/8., 1/2., 1]) - petcorr
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
-
-
         
         fig.cla()
         fig.set_title("Simudark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")

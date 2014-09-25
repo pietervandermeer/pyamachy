@@ -54,6 +54,7 @@ class dbError(Exception):
 class readSunInfo(Exception):
     pass
 
+# fixed copy of ma.median() 
 def mamedian(a, axis=None, out=None, overwrite_input=False):
     from numpy import sort
     """
@@ -132,29 +133,36 @@ def mamedian(a, axis=None, out=None, overwrite_input=False):
     elif axis < 0:
         axis += a.ndim
 
+    # print("asorted.shape[axis]=", asorted.shape[axis])
+    # for i in np.arange(238):
+    #     print(asorted[i,0])
     counts = asorted.shape[axis] - (asorted.mask).sum(axis=axis)
     h = counts // 2
     # create indexing mesh grid for all but reduced axis
-    axes_grid = [np.arange(x) for i, x in enumerate(asorted.shape)
-                 if i != axis]
+    axes_grid = [np.arange(x) for i, x in enumerate(asorted.shape) if i != axis]
+#    print("axes_grid=", axes_grid)
     ind = np.meshgrid(*axes_grid, sparse=True, indexing='ij')
     # insert indices of low and high median
     ind.insert(axis, h - 1)
+#    print("ind=", len(ind), ind[0].shape, ind[1].shape, ind)
     low = asorted[ind]
+#    print("low=", low)
     ind[axis] = h
+#    print("ind=", len(ind), ind[0].shape, ind[1].shape, ind)
     high = asorted[ind]
+#    print("high=", high)
     # duplicate high if odd number of elements so mean does nothing
     odd = counts % 2 == 1
     if asorted.ndim == 1:
         if odd:
             low = high
     else:
-        print(odd)
-        print(odd.shape)
-        print(low.mask)
-        print(high.mask)
-        print(low.shape,high.shape)
-        low[odd] = high[odd]
+        # print(odd)
+        # print(odd.shape)
+        # print(low.mask)
+        # print(high.mask)
+        # print(low.shape,high.shape)
+        low.data[odd] = high.data[odd] # was low[odd] = high[odd], caused a crash in python2.7
     return np.ma.mean([low, high], axis=0, out=out)
 
 #-------------------------SECTION AUXILIARY CKD-----------------------------
@@ -954,7 +962,9 @@ class SMRcalib:
 
         # omit first and last spectra
 #        smr.smr      = ma.median( smr.spectra[1:-1,:], axis=0 )
-        smr.smr      = mamedian( smr.spectra[1:-1,:], axis=0 )
+#        smr.smr      = mamedian( smr.spectra[1:-1,:], axis=0 )
+        smr.smr      = np.mean( smr.spectra[1:-1,:], axis=0 )
+        
         smr.smrVar   = np.zeros( smr.numPixels, dtype='float64' )
         smr.smrSlope = np.zeros( smr.numPixels, dtype='float64' )
         smr.smrError = np.zeros( smr.numPixels, dtype='float64' )

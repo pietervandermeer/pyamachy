@@ -228,8 +228,8 @@ class orbitfilter:
     def get_closest_monthly(self, orbit):
         delta = numpy.abs(self.monthlies - orbit)
         idx = numpy.argmin(delta)
-        print(self.monthlies.shape)
-        print(idx.shape, numpy.isscalar(idx), idx)
+        #print(self.monthlies.shape)
+        #print(idx.shape, numpy.isscalar(idx), idx)
         if numpy.isscalar(idx):
             return self.monthlies[idx]
         else:
@@ -257,9 +257,9 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
         #metaindx = orbitlist = in_orbitlist
         metaindx = numpy.in1d(orbitlist, in_orbitlist)
     else:
-        print('orbitrange=', orbitrange)
+        #print('orbitrange=', orbitrange)
         metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-        print(metaindx)
+        #print(metaindx)
 
     if metaindx[0].size is 0:
         print('read_extracted_states: orbit range not present in database')
