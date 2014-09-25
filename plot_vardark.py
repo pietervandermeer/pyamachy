@@ -78,11 +78,9 @@ class VarDarkPlotter():
         # parameters used especially for the GUI
         parser.add_argument('-l', '--legend', action='store_true', 
                             dest='legend', help='displays legend')
+        parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24044)
+        parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=620)
         self.args = parser.parse_args()
-
-        # TODO configurable
-        self.args.orbit = 24044
-        self.args.pixnr = 620
 
         #
         # Parse config file, exit if unsuccessful
