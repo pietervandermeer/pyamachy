@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 
 from envisat import PhaseConverter
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
-from scia_dark_functions import scia_dark_fun1
+from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #-------------------------SECTION VERSION-----------------------------------
 
@@ -46,7 +46,6 @@ _dbVersion = {'major': 0,
 
 nlc = NonlinCorrector()
 phaseconv = PhaseConverter()
-ofilt = orbitfilter()
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
 
@@ -195,13 +194,12 @@ def fit_monthly(orbit, verbose=False, **kwargs):
     # fit it
     #
 
-    x = all_state_phases, pet, coadd
+    x = all_state_phases, pet #, coadd
     if verbose:
         print(all_state_phases.shape)
         print(pet.shape)
         print(pet)
         print(coadd)
-    #fitobj = kmpfit.Fitter(residuals=scia_dark_residuals1, data=(x, all_readouts[:,pixnr], all_sigmas[:,pixnr]))
     
     aoinfo = dict(fixed=False, limits=[0,10000])
     lcinfo = dict(fixed=False, limits=[-100000.,+100000.])
@@ -210,7 +208,8 @@ def fit_monthly(orbit, verbose=False, **kwargs):
     amp2info = dict(fixed=False, limits=[-1.,+1.])
     phase1info = dict(fixed=False, limits=[-3.,+3.])
     phase2info = dict(fixed=False, limits=[-3.,+3.])
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
+#    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
 
     # prepare initial parameters
     ao0 = 4000
@@ -220,12 +219,14 @@ def fit_monthly(orbit, verbose=False, **kwargs):
     amp2_0 = 0.1
     phase_offset1 = 0
     phase_offset2 = 0
-    p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1]) #, phase_offset2
+    #p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1])
+    p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1, amp2_0, phase_offset2])
 
     # ..and fit
     n_done = 0
     statuses = numpy.zeros(n_pix)
     res_phases = numpy.zeros(n_pix)
+    res_phases2 = numpy.zeros(n_pix)
     for pixnr in range(n_pix):
         #print(pixnr)
         pix_readouts = all_readouts[:,pixnr]
@@ -234,27 +235,32 @@ def fit_monthly(orbit, verbose=False, **kwargs):
         #print('sigmas = ', pix_sigmas)
         #print(numpy.sum(pix_sigmas))
         if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
-            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+#            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
             continue
-        #fitobj.fit(params0=p0)
         if verbose:
             print(pixnr, fitobj.params[4] % 1, fitobj.message)
         statuses[pixnr] = fitobj.status
         res_phases[pixnr] = fitobj.params[4]
+        res_phases2[pixnr] = fitobj.params[6]
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
         #else:
         #   print("Optimal parameters: ", fitobj.params)
 
-    channel_phase = numpy.median(res_phases[numpy.where(statuses >= 0) and numpy.where(res_phases != -3)] % 1)
+    channel_phase1 = numpy.median(res_phases[numpy.where(statuses >= 0) and numpy.where(res_phases != -3)] % 1)
+    channel_phase2 = numpy.median(res_phases2[numpy.where(statuses >= 0) and numpy.where(res_phases2 != -3)] % 1)
     if verbose:
         print('channel median phase =', channel_phase)
     phase1info = dict(fixed=True, limits=[-3.,+3.])
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
-    p0[4] = channel_phase
+    phase2info = dict(fixed=True, limits=[-3.,+3.])
+    #parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info]
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]  
+    p0[4] = channel_phase1
+    p0[6] = channel_phase2
 
     #
     # pass 2 - fix phase shift
@@ -263,7 +269,9 @@ def fit_monthly(orbit, verbose=False, **kwargs):
     aos = numpy.zeros(n_pix)
     lcs = numpy.zeros(n_pix)
     amps = numpy.zeros(n_pix)
+    amps2 = numpy.zeros(n_pix)
     trends = numpy.zeros(n_pix)
+    statuses = numpy.zeros(n_pix)
     for pixnr in range(n_pix):
         #print(pixnr)
         pix_readouts = all_readouts[:,pixnr]
@@ -272,7 +280,8 @@ def fit_monthly(orbit, verbose=False, **kwargs):
         #print('sigmas = ', pix_sigmas)
         #print(numpy.sum(pix_sigmas))
         if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
-            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            #fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
             continue
@@ -284,15 +293,22 @@ def fit_monthly(orbit, verbose=False, **kwargs):
         lcs[pixnr] = fitobj.params[1]
         amps[pixnr] = fitobj.params[2]
         trends[pixnr] = fitobj.params[3]
+        amps2[pixnr] = fitobj.params[5]
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
+
+    channel_amp2 = numpy.median(amps2[numpy.where(statuses >= 0)])
+
+    # TODO: initial outlier removal pass?
 
     #plt.cla()
     #plt.scatter(all_state_phases, all_readouts[:,pixnr])
     #plt.show()
 
-    return channel_phase, aos, lcs, amps, trends
+    # TODO: return refinement parameters as well.
+
+    return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
 
 # fit dark model to an orbits with normal (eclipse) dark states
 # use parameters computed from nearest calibration orbits
@@ -411,6 +427,8 @@ class VarDarkDb:
                   truncate=False, calibration=None, verbose=False ):
         self.monthly_orbit = -1
         self.created = False
+        self.ofilt = orbitfilter()
+
         if args:
             self.db_name  = args.db_name
             self.calibration = args.calibration.copy()
@@ -572,10 +590,10 @@ class VarDarkDb:
 
     def calc_and_store_orbit(self, orbit, verbose=False, **kwargs):
         normal_orbit = orbit
-        monthly_orbit = ofilt.get_closest_monthly(orbit)
+        monthly_orbit = self.ofilt.get_closest_monthly(orbit)
         if self.monthly_orbit != monthly_orbit:
             # calculate if monthly if not buffered
-            channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit, **kwargs)
+            channel_phase, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(monthly_orbit, **kwargs)
             self.monthly_orbit = monthly_orbit
             self.aos = aos
             self.lcs = lcs
@@ -617,12 +635,14 @@ class VarDarkDb:
 
 #- main ------------------------------------------------------------------------
 
-start_orbit = 27085
-end_orbit = 27195
-vddl = VarDarkDb(verbose=False, db_name="sdmf_vardark_long.h5") # args=None
-for orbit in range(start_orbit, end_orbit):
-    vddl.calc_and_store_orbit(orbit, verbose=False, shortFlag=False, longFlag=True)
-vdds = VarDarkDb(verbose=False, db_name="sdmf_vardark_short.h5") # args=None
-for orbit in range(start_orbit, end_orbit):
-    vdds.calc_and_store_orbit(orbit, verbose=False, shortFlag=True, longFlag=False)
+# a test product generating entity. runs only when this module is run as a program.
+if __name__ == "__main__":
+    start_orbit = 27085
+    end_orbit = 27195
+    vddl = VarDarkDb(verbose=False, db_name="sdmf_vardark_long.h5") # args=None
+    for orbit in range(start_orbit, end_orbit):
+        vddl.calc_and_store_orbit(orbit, verbose=False, shortFlag=False, longFlag=True)
+    vdds = VarDarkDb(verbose=False, db_name="sdmf_vardark_short.h5") # args=None
+    for orbit in range(start_orbit, end_orbit):
+        vdds.calc_and_store_orbit(orbit, verbose=False, shortFlag=True, longFlag=False)
 

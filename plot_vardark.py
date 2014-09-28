@@ -37,7 +37,8 @@ from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
-from vardark_module import scia_dark_fun1, extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend
+from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend
+from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 # Used to guarantee to use at least Wx2.8
 import wxversion
@@ -168,12 +169,16 @@ class VarDarkPlotter():
         use_long_states = True
         pixnr = 590
 
-        channel_phase, aos, lcs, amps, trends = fit_monthly(monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states)
+        channel_phase, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states)
         self.aos = aos
         self.lcs = lcs
         self.amps = amps
+        self.channel_amp2 = channel_amp2
         self.trends = trends
+        self.channel_phase = channel_phase
+        self.channel_phase2 = channel_phase2
         print('channel_phase=', channel_phase)
+        print('channel_phase2=', channel_phase)
         print('aos=', aos)
         print('lc=', lcs)
         print('amp=', amps)
@@ -193,7 +198,6 @@ class VarDarkPlotter():
         self.trends_fit = trends_fit
         self.readouts = readouts
         self.sigmas = sigmas 
-        self.channel_phase = channel_phase
 
         self.readout_phases, readout_pets, readout_coadd = x
 
@@ -227,8 +231,8 @@ class VarDarkPlotter():
 
         pixnr = self.args.pixnr
 
-        pfit = self.aos[pixnr], self.lcs_fit[pixnr], self.amps[pixnr], self.trends_fit[pixnr], self.channel_phase
-        plin = self.aos[pixnr], self.lcs_lin[pixnr], self.amps[pixnr], self.trends_lin[pixnr], self.channel_phase
+        pfit = self.aos[pixnr], self.lcs_fit[pixnr], self.amps[pixnr], self.trends_fit[pixnr], self.channel_phase, self.channel_amp2, self.channel_phase2
+        plin = self.aos[pixnr], self.lcs_lin[pixnr], self.amps[pixnr], self.trends_lin[pixnr], self.channel_phase, self.channel_amp2, self.channel_phase2
         #plin = aos[pixnr], lcs_lin[pixnr], amps[pixnr], 0, channel_phase
 
         pts_per_orbit = 50
@@ -240,7 +244,7 @@ class VarDarkPlotter():
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
         
         fig.cla()
-        fig.set_title("Simudark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")
+        fig.set_title("Vardark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")
         fig.set_xlabel("Orbit phase")
         fig.set_ylabel("Dark signal (BU)")
         fig.set_xlim([0,2])
@@ -248,9 +252,9 @@ class VarDarkPlotter():
         #print(numpy.sqrt(self.noise[:,pixnr]))
         #print(numpy.sqrt(self.simunoise[pixnr]))
         for i in range(len(pets)):
-            x = orbphase, numpy.zeros(total_pts)+pets[i], coadd
-            fig.plot(orbphase, scia_dark_fun1(pfit, x), c=cols[i], label="fit orbvar "+str(pets[i]))
-            fig.plot(orbphase, scia_dark_fun1(plin, x), c=cols[i], marker='+', label="lin orbvar "+str(pets[i]))
+            x = orbphase, numpy.zeros(total_pts)+pets[i] #, coadd
+            fig.plot(orbphase, scia_dark_fun2(pfit, x), c=cols[i], label="fit orbvar "+str(pets[i]))
+            fig.plot(orbphase, scia_dark_fun2(plin, x), c=cols[i], marker='+', label="lin orbvar "+str(pets[i]))
         fig.errorbar(self.readout_phases, self.readouts[:,pixnr], yerr=self.sigmas[:,pixnr], ls='none', marker='o', label="dark states")
 
         if self.args.legend:
