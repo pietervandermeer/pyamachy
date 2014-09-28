@@ -35,6 +35,7 @@ import warnings
 import numpy as np
 import numpy.ma as ma
 import h5py
+from scia_dark_functions import scia_dark_fun1
 
 #-------------------------SECTION VERSION-----------------------------------
 _swVersion = {'major': 0,
@@ -594,6 +595,7 @@ class SMRcalib:
         * error estimate not implemented
         '''
         from math import cos, pi
+        import matplotlib.pyplot as plt
 
         if verbose:
             print( '(3) Perform subtraction of dark signal' )
@@ -621,13 +623,15 @@ class SMRcalib:
 
         corr = ao + pet * lc
 
+        corrsimu = corr.copy()
+        corrvar = corr.copy()
+
         with h5py.File( '/SCIA/SDMF30/sdmf_simudark.h5', 'r' ) as fid:
             grp = fid['/ch8']
             dset = grp['orbitList']
             orbitList = dset[:]
             metaIndx = np.argmin(abs(orbitList - smr.absOrbit))
             dset = grp['metaTable']
-            mtbl = dset[:]
             mtbl = dset[metaIndx]
             dset = grp['ao']
             ao = dset[:,metaIndx]
@@ -636,17 +640,64 @@ class SMRcalib:
             dset = grp['amp1']
             amp1 = dset[:,metaIndx]
 
-        orbvar = cos( 2 * pi * (mtbl['PHASE1'] + smr.mtbl['orbitPhase']) ) \
-            + mtbl['AMP2'] * cos( 4 * pi * (mtbl['PHASE2'] 
-                                            + smr.mtbl['orbitPhase']) )
-#        orbsig = cos( 2 * pi * (mtbl['PHASE1'] + smr.mtbl['orbitPhase']) ) \
-#            + mtbl['SIG_AMP2'] * cos( 4 * pi * ( mtbl['PHASE2'] 
-#                                                 + smr.mtbl['orbitPhase']) )
+            orbvar = cos( 2 * pi * (mtbl['PHASE1'] + smr.mtbl['orbitPhase']) ) \
+                + mtbl['AMP2'] * cos( 4 * pi * (mtbl['PHASE2'] 
+                                                + smr.mtbl['orbitPhase']) )
+    #        orbsig = cos( 2 * pi * (mtbl['PHASE1'] + smr.mtbl['orbitPhase']) ) \
+    #            + mtbl['SIG_AMP2'] * cos( 4 * pi * ( mtbl['PHASE2'] 
+    #                                                 + smr.mtbl['orbitPhase']) )
 
-        indx = 7 * smr.channelSize + np.arange(smr.channelSize)
-        corr[indx] = ao + pet[indx] * (lc + orbvar * amp1)
+            indx = 7 * smr.channelSize + np.arange(smr.channelSize)
+            corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
+            print("corrsimu")
 
-        smr.spectra -= corr
+        with h5py.File( 'sdmf_vardark_short.h5', 'r' ) as fid:
+            dset = fid['orbitList']
+            orbitList = dset[:]
+            metaIndx = np.argmin(abs(orbitList - smr.absOrbit))
+            print("metaIndx=", metaIndx)
+            dset = fid['metaTable']
+            mtbl = dset[metaIndx]
+            phase_shift = mtbl['phaseShift']
+            dset = fid['ao']
+            ao = dset[metaIndx,:]
+            dset = fid['lc']
+            lc = dset[metaIndx,:]
+            dset = fid['amp']
+            amp = dset[metaIndx,:]
+            dset = fid['trend']
+            trend = dset[metaIndx,:]
+            orbit_phase = smr.mtbl['orbitPhase']
+            n_exec = orbit_phase.size
+            #print("ao=",ao.shape)
+            #print("lc=",lc.shape)
+            #print("amp=",amp.shape)
+            #print("trend=",trend.shape)
+
+            x = orbit_phase, np.zeros(n_exec)+pet[7*1024], np.empty(n_exec)
+            for pixnr in range(1024):
+                p = ao[pixnr], lc[pixnr], amp[pixnr], trend[pixnr], phase_shift
+                #print(p, x)
+                # orbit phases, pets, coadding factors (unused)
+                corrvar[pixnr+7*1024] = scia_dark_fun1(p, x)
+                print(corrvar[7*1024])
+
+        #print(smr.spectra.shape, corrvar.shape)
+        specsimu = smr.spectra - corrsimu
+        specvar = smr.spectra - corrvar           
+
+        print(corrsimu[7*1024:8*1024], corrvar[7*1024:8*1024], corr[7*1024:8*1024])
+        #print(smr.spectra[smr.numSpectra/2, 7*1024:8*1024])
+
+        smr.spectra -= corrvar
+
+        plt.cla()
+        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
+        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
+        plt.scatter(np.arange(1024), specsimu[0, 7*1024:8*1024].flatten(), c='b')
+        plt.scatter(np.arange(1024), specvar[0, 7*1024:8*1024].flatten(), c='r')
+        plt.show()
+
         #
         # masked invalid pixels
         #

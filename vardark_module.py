@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 
 from envisat import PhaseConverter
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
+from scia_dark_functions import scia_dark_fun1
 
 #-------------------------SECTION VERSION-----------------------------------
 
@@ -50,31 +51,6 @@ fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
 
 #- functions -------------------------------------------------------------------
-
-def scia_dark_fun1(p, x):
-    ao = p[0]
-    dc = p[1]
-    amp1 = p[2] # wave amp, relative to dark
-    trend = p[3] # relative to dark
-    phase_shift1 = p[4]
-    #amp2 = p[5]
-    #phase_shift2 = p[6]
-    #print(ao,dc,amp1,trend,phase_shift1)
-    # Extract exposure information and orbit phase from x
-    orbit_phase, pet, coadd = x
-    #print(orbit_phase)
-    n_x = orbit_phase.size # nr of datapoints
-
-    dark = numpy.zeros(n_x)
-    dark += dc
-    #print(amp1 * cos(2*pi*(orbit_phase + phase_shift1)))
-    dark += amp1 * cos(2*pi*(orbit_phase + phase_shift1))
-    #print(amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2)))
-    #dark += amp1 * amp2 * cos(4*pi*(orbit_phase + phase_shift2))
-    dark += trend * orbit_phase
-
-#    return (dark*pet + ao)*coadd    
-    return dark*pet + ao
 
 def scia_dark_residuals1(p, data):
     x, y, yerr = data 
@@ -641,8 +617,12 @@ class VarDarkDb:
 
 #- main ------------------------------------------------------------------------
 
-use_short_states = False
-use_long_states = True
-vdd = VarDarkDb(verbose=False) # args=None
-for orbit in range(27085,27195):
-    vdd.calc_and_store_orbit(orbit, verbose=False, shortFlag=use_short_states, longFlag=use_long_states)
+start_orbit = 27085
+end_orbit = 27195
+vddl = VarDarkDb(verbose=False, db_name="sdmf_vardark_long.h5") # args=None
+for orbit in range(start_orbit, end_orbit):
+    vddl.calc_and_store_orbit(orbit, verbose=False, shortFlag=False, longFlag=True)
+vdds = VarDarkDb(verbose=False, db_name="sdmf_vardark_short.h5") # args=None
+for orbit in range(start_orbit, end_orbit):
+    vdds.calc_and_store_orbit(orbit, verbose=False, shortFlag=True, longFlag=False)
+
