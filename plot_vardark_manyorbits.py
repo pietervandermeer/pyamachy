@@ -218,7 +218,16 @@ class MVarDarkPlotter():
             self.trends_lin.append(trends)
             self.lcs_lin.append(lcs)
 
+        dump_pixel()
+
         self.loaded = True
+
+    def dump_pixel(self):
+        pixnr = self.args.pixnr
+        for i_orb in range(self.orb_window):
+            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orbit, stateid1, stateid2)
+            # TODO!
+            print(phi, rp)
 
     # plot method. this should be about the same as in your stand-alone script.
     # use input object 'fig' as a subplot (axis) object to plot with.

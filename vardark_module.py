@@ -59,6 +59,51 @@ def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
 
+def extract_two_dark_states_(orbit, stateid1, stateid2):
+    # orbit 1
+    orbrange = [orbit,orbit]
+    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
+    state_mtbl = states['mtbl']
+    jds1_8 = state_mtbl['julianDay'][:]
+    #print(states['readoutMean'].shape)
+    readouts = states['readoutMean']
+    noise = states['readoutNoise']
+    n_exec1_8 = readouts.shape[0]
+    for idx_exec in range(n_exec1_8):
+        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
+    pet8 = states['pet'][0]
+    #print('pet8=',pet8)
+    coadd8 = states['coadd'][0]
+    readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+    noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
+    state8_phases = state_mtbl['orbitPhase'][:]
+
+    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
+    state_mtbl = states63['mtbl']
+    jds1_63 = state_mtbl['julianDay'][:]
+    #print(states['readoutMean'].shape)
+    readouts = states63['readoutMean']
+    noise = states63['readoutNoise']
+    n_exec1_63 = readouts.shape[0]
+    for idx_exec in range(n_exec1_63):
+        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
+    pet63 = states63['pet'][0]
+    #print('pet63=',pet63)
+    coadd63 = states['coadd'][0]
+    readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+    noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
+    state63_phases = state_mtbl['orbitPhase'][:]
+
+    # glue data from first orbit
+    n_exec1 = n_exec1_8 + n_exec1_63
+    jds = numpy.concatenate((jds1_8, jds1_63))
+    state_phases1 = numpy.concatenate((state8_phases, state63_phases)) 
+    readouts1 = numpy.concatenate((readouts8_, readouts63_))
+    noise1 = numpy.concatenate((noise8_, noise63_))
+    ephases = phaseconv.get_phase(jds)
+
+    return ephases, jds, readouts1, noise1
+
 def extract_two_dark_states(orbit, stateid1, stateid2):
     # orbit 1
     orbrange = [orbit,orbit]
