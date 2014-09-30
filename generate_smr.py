@@ -36,6 +36,7 @@ import numpy as np
 import numpy.ma as ma
 import h5py
 from scia_dark_functions import scia_dark_fun1
+from envisat import PhaseConverter
 
 #-------------------------SECTION VERSION-----------------------------------
 _swVersion = {'major': 0,
@@ -659,6 +660,7 @@ class SMRcalib:
             dset = fid['metaTable']
             mtbl = dset[metaIndx]
             phase_shift = mtbl['phaseShift']
+            phase_shift2 = mtbl['phaseShift2']
             dset = fid['ao']
             ao = dset[metaIndx,:]
             dset = fid['lc']
@@ -667,7 +669,10 @@ class SMRcalib:
             amp = dset[metaIndx,:]
             dset = fid['trend']
             trend = dset[metaIndx,:]
-            orbit_phase = smr.mtbl['orbitPhase']
+            amp2 = mtbl['amp2']
+            jds = smr.mtbl['julianDay']
+            orbit_phase = phase_conv.get_phase(jds, eclipseMode=True)
+            #orbit_phase = smr.mtbl['orbitPhase']
             n_exec = orbit_phase.size
             #print("ao=",ao.shape)
             #print("lc=",lc.shape)
@@ -676,7 +681,7 @@ class SMRcalib:
 
             x = orbit_phase, np.zeros(n_exec)+pet[7*1024], np.empty(n_exec)
             for pixnr in range(1024):
-                p = ao[pixnr], lc[pixnr], amp[pixnr], trend[pixnr], phase_shift
+                p = ao[pixnr], lc[pixnr], amp[pixnr], trend[pixnr], phase_shift, amp2, phase_shift2
                 #print(p, x)
                 # orbit phases, pets, coadding factors (unused)
                 corrvar[pixnr+7*1024] = scia_dark_fun1(p, x)
@@ -1482,6 +1487,7 @@ def update_progress(progress):
 
 #-------------------------SECTION MAIN--------------------------------------
 if __name__ == '__main__':
+    phase_conv = PhaseConverter()
     sys.path.append( '/opt/local/EOS/bin' )
     #
     #

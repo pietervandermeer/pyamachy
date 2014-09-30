@@ -61,10 +61,13 @@ class PhaseConverter:
 
     def get_phase(self, jds, eclipseMode=True):
         """
-        input: jds: numpy array of julian dates
+        input: jds: numpy array of julian dates or a float64 scalar
                eclipseMode: boolean flag to indicate eclipse mode or polar mode
         returns: numpy array of array phases (same size as 'jds')
         """
+        if not isinstance(jds, numpy.ndarray):
+            jds = numpy.array(jds)
+
         n_records = jds.size
         saa_flag = False;
         dummy_orbit = 0

@@ -33,13 +33,13 @@ from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 #-------------------------SECTION VERSION-----------------------------------
 
 _swVersion = {'major': 0,
-              'minor': 2,
+              'minor': 3,
               'revision' : 0}
 _calibVersion = {'major': 0,
                  'minor': 1,
                  'revision' : 0}
 _dbVersion = {'major': 0,
-              'minor': 1,
+              'minor': 2,
               'revision' : 0}
 
 #- globals ---------------------------------------------------------------------
@@ -374,7 +374,7 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, 
 
 # compute thermal background trend between two normal orbits 
 # also computes actual thermal background offset (excluding trend or oscillation)
-def compute_trend(orbit, aos, amps, phaseshift, **kwargs):
+def compute_trend(orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
 
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
 
@@ -402,14 +402,15 @@ def compute_trend(orbit, aos, amps, phaseshift, **kwargs):
         avg2 = numpy.mean(background[idx2])
         phi1 = numpy.mean(ephases[idx1])
         phi2 = numpy.mean(ephases[idx2])
-        lcs[pixnr] = avg1 - amps[pixnr]*cos(2*pi*(phi1+phaseshift))
-
+        idx0 = numpy.argmin(ephases)
+        phi0 = ephases[idx0]
         trends[pixnr] = (avg2-avg1)/(phi2-phi1)
+        lcs[pixnr] = avg1 - trends[pixnr]*phi1 - amps[pixnr]*( cos(2*pi*(phi1+phaseshift)) + amp2*cos(4*pi*(phi1+phaseshift2)) )
 
     return trends, lcs
 
 class VarDark:
-    def __init__(self, orbit,ao, lc, amp, trend, phaseshift):
+    def __init__(self, orbit,ao, lc, amp, trend, phaseshift, amp2, phaseshift2):
         self.numPixels = 1024
         self.absOrbit = orbit
         self.ao = ao
@@ -417,8 +418,11 @@ class VarDark:
         self.amp = amp
         self.trend = trend
         self.phaseshift = phaseshift
+        self.amp2 = amp2
         self.mtbl = dict()
         self.mtbl['julianDay'] = 1.234 # TODO convert orbit to JD
+        self.mtbl['phaseShift2'] = phaseshift2
+        self.mtbl['amp2'] = amp2
         self.mtbl['obmTemp'] = 999 # TODO
         self.mtbl['detTemp'] = numpy.array([999,999,999,999,999,999,999,999]) # TODO
 
@@ -462,8 +466,8 @@ class VarDarkDb:
     def fill_mtbl(self, vardark):
         from datetime import datetime 
 
-        fmtMTBL  = 'float64,a20,uint16,uint16,float32,float32,8float32'
-        nameMTBL = ('julianDay','entryDate','absOrbit','quality','phaseShift','obmTemp','detTemp')
+        fmtMTBL  = 'float64,a20,uint16,uint16,float32,float32,float32,float32,8float32'
+        nameMTBL = ('julianDay','entryDate','absOrbit','quality','phaseShift','phaseShift2','amp2','obmTemp','detTemp')
 
         self.mtbl = np.empty(1, dtype=fmtMTBL )
         self.mtbl.dtype.names = nameMTBL
@@ -474,6 +478,8 @@ class VarDarkDb:
         self.mtbl['phaseShift'] = vardark.phaseshift
         self.mtbl['obmTemp'] = vardark.mtbl['obmTemp']
         self.mtbl['detTemp'] = vardark.mtbl['detTemp']
+        self.mtbl['phaseShift2'] = vardark.mtbl['phaseShift2']
+        self.mtbl['amp2'] = vardark.mtbl['amp2']
 
     def create(self, vardark):
         with h5py.File( self.db_name, 'w', libver='latest' ) as fid:
@@ -593,13 +599,15 @@ class VarDarkDb:
         monthly_orbit = self.ofilt.get_closest_monthly(orbit)
         if self.monthly_orbit != monthly_orbit:
             # calculate if monthly if not buffered
-            channel_phase, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(monthly_orbit, **kwargs)
+            channel_phase, channel_phase2, aos, lcs, amps, amp2, trends = fit_monthly(monthly_orbit, **kwargs)
             self.monthly_orbit = monthly_orbit
             self.aos = aos
             self.lcs = lcs
             self.amps = amps
+            self.amp2 = amp2
             self.trends = trends
             self.channel_phase = channel_phase 
+            self.channel_phase2 = channel_phase2
         else:
             # just use the buffered version
             aos = self.aos
@@ -607,12 +615,16 @@ class VarDarkDb:
             amps = self.amps
             trends = self.trends
             channel_phase = self.channel_phase
+            amp2 = self.amp2
+            channel_phase2 = self.channel_phase2
 
         if verbose:
             print('channel_phase=', channel_phase)
+            print('channel_phase2=', channel_phase2)
             print('aos=', aos)
             print('lc=', lcs)
             print('amp=', amps)
+            print('amp2=', amp2)
             print('trend=', trends)
 
         # fit constant part of lc and trend
@@ -620,13 +632,13 @@ class VarDarkDb:
         #trends_fit = numpy.zeros(n_pix) # just to illustrate difference
 
         # directly compute constant part of lc and trend for averaged eclipse data points
-        trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, channel_phase, **kwargs)
+        trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, amp2, channel_phase, channel_phase2, **kwargs)
 
         #
         # write to db
         #
 
-        vd = VarDark(normal_orbit, aos, lcs_lin, amps, trends_lin, channel_phase)
+        vd = VarDark(normal_orbit, aos, lcs_lin, amps, trends_lin, channel_phase, amp2, channel_phase2)
         self.fill_mtbl(vd)
         if self.created:
             self.append(vd)
@@ -639,9 +651,11 @@ class VarDarkDb:
 if __name__ == "__main__":
     start_orbit = 27085
     end_orbit = 27195
+    print("building vardark long..")
     vddl = VarDarkDb(verbose=False, db_name="sdmf_vardark_long.h5") # args=None
     for orbit in range(start_orbit, end_orbit):
         vddl.calc_and_store_orbit(orbit, verbose=False, shortFlag=False, longFlag=True)
+    print("building vardark short..")
     vdds = VarDarkDb(verbose=False, db_name="sdmf_vardark_short.h5") # args=None
     for orbit in range(start_orbit, end_orbit):
         vdds.calc_and_store_orbit(orbit, verbose=False, shortFlag=True, longFlag=False)
