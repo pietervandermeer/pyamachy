@@ -37,7 +37,7 @@ from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
-from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend
+from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend, extract_two_dark_states_
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 # Used to guarantee to use at least Wx2.8
@@ -79,8 +79,8 @@ class MVarDarkPlotter():
         # parameters used especially for the GUI
         parser.add_argument('-l', '--legend', action='store_true', 
                             dest='legend', help='displays legend')
-        parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24200)
-        parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=620)
+        parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24038)
+        parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=120)
         self.args = parser.parse_args()
 
         #
@@ -105,7 +105,7 @@ class MVarDarkPlotter():
         self.orbits = map(str, orbits)
         fextract.close()
         self.old_monthly = -1
-        self.orb_window = 20
+        self.orb_window = 14
 
         #
         # get 6 distinct colour-blind friendly colours for scatter plot
@@ -157,6 +157,17 @@ class MVarDarkPlotter():
             self.view.refresh_plot()
         else:
             print("unknown parameter "+name)
+
+    def dump_pixel(self):
+        pixnr = self.args.pixnr
+        orbit = self.args.orbit
+        for i_orb in range(self.orb_window):
+            orb = orbit + i_orb
+            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orb, 8, 63)
+            # TODO!
+            phi += i_orb
+            for i in range(phi.size):
+                print(phi[i], readouts[i][pixnr]-self.aos[pixnr], sigmas[i][pixnr], tdet[i])
 
     # loads data and store it for use in 'plot' method.
     def load(self):
@@ -218,16 +229,9 @@ class MVarDarkPlotter():
             self.trends_lin.append(trends)
             self.lcs_lin.append(lcs)
 
-        dump_pixel()
+        #self.dump_pixel()
 
         self.loaded = True
-
-    def dump_pixel(self):
-        pixnr = self.args.pixnr
-        for i_orb in range(self.orb_window):
-            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orbit, stateid1, stateid2)
-            # TODO!
-            print(phi, rp)
 
     # plot method. this should be about the same as in your stand-alone script.
     # use input object 'fig' as a subplot (axis) object to plot with.
@@ -251,7 +255,7 @@ class MVarDarkPlotter():
         pts_per_orbit = 50
         n_orbits = 1
         total_pts = n_orbits*pts_per_orbit+1
-        orbphase = .12 + (numpy.arange(total_pts)/float(pts_per_orbit))
+        orbphase = (numpy.arange(total_pts)/float(pts_per_orbit)) #+.12
         coadd = numpy.ones(total_pts)
         pets = numpy.array([1/2., 1]) - petcorr
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
@@ -264,24 +268,23 @@ class MVarDarkPlotter():
 
         for i_orb in range(self.orb_window):
 
+            # dark states
+            ph_st = (self.phases_list[i_orb])
+            rd = (self.readouts_list[i_orb])[:,pixnr]
+            si = (self.sigmas_list[i_orb])[:,pixnr]
+            fig.errorbar(ph_st, rd, yerr=si, ls='none', marker='o', label="dark states")
+
+            # vardark model
             for i_pet in range(len(pets)):
 
                 lc = (self.lcs_lin[i_orb])[pixnr]
                 trend = (self.trends_lin[i_orb])[pixnr]
                 plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                ph = orbphase+float(i_orb)
+                ph = orbphase+float(i_orb) -.12
                 x = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
 
-                if self.readout_phases.size < 20: 
-                    # not a montly calib. orbit, linear computed trend, please
-                    fig.plot(ph, scia_dark_fun2(plin, x), c=cols[i_pet], marker='+', label="lin orbvar "+str(pets[i_pet]))
-                else:
-                    fig.plot(ph, scia_dark_fun2(pfit, x), c=cols[i_pet], label="fit orbvar "+str(pets[i_pet]))
-
-            ph = (self.phases_list[i_orb])
-            rd = (self.readouts_list[i_orb])[:,pixnr]
-            si = (self.sigmas_list[i_orb])[:,pixnr]
-            fig.errorbar(ph, rd, yerr=si, ls='none', marker='o', label="dark states")
+                fig.plot(ph, scia_dark_fun2(plin, x), c=cols[i_pet], label="lin orbvar "+str(pets[i_pet])) #marker='+', 
+                #fig.plot(ph, scia_dark_fun2(pfit, x), c=cols[i_pet], label="fit orbvar "+str(pets[i_pet]))
 
         if self.args.legend:
             fig.legend(loc='upper right', scatterpoints=10)
