@@ -82,6 +82,7 @@ class MVarDarkPlotter():
         parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24038)
         parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=120)
         self.args = parser.parse_args()
+        self.residual_mode = False
 
         #
         # Parse config file, exit if unsuccessful
@@ -215,11 +216,20 @@ class MVarDarkPlotter():
         self.readouts_list = list()
         self.sigmas_list = list()
         self.phases_list = list()
+        self.rd_pets = list()
+        # TODO: doesn't work throughout the entire mission.. 
+        if use_long_states:
+            s1 = 8
+            s2 = 63
+        elif use_short_states:
+            s1 = 26
+            s2 = 46
         for i_orb in range(self.orb_window):
-            print("window orbit", i_orb)
+            #print("window orbit", i_orb)
             orb = normal_orbit+i_orb
-            (lst) = extract_dark_states(orb, shortFlag=use_short_states, longFlag=use_long_states)
-            n_exec, self.polar_phases, readout_pet, readout_coadd, self.readouts, self.sigmas, self.readout_phases = lst
+            (lst) = extract_two_dark_states_(orb, stateid1=s1, stateid2=s2)
+            #n_exec, self.polar_phases, readout_pet, readout_coadd, self.readouts, self.sigmas, self.readout_phases = lst
+            self.readout_phases, jds, self.readouts, self.sigmas, tdet, readout_pet = lst
             self.phases_list.append(self.readout_phases + float(i_orb))
             self.readouts_list.append(self.readouts)
             self.sigmas_list.append(self.sigmas)
@@ -228,6 +238,7 @@ class MVarDarkPlotter():
             trends, lcs = compute_trend(orb, aos, amps, channel_amp2, channel_phase, channel_phase2, shortFlag=use_short_states, longFlag=use_long_states)
             self.trends_lin.append(trends)
             self.lcs_lin.append(lcs)
+            self.rd_pets.append(readout_pet)
 
         #self.dump_pixel()
 
@@ -259,36 +270,63 @@ class MVarDarkPlotter():
         coadd = numpy.ones(total_pts)
         pets = numpy.array([1/2., 1]) - petcorr
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
-        
+
         fig.cla()
-        fig.set_title("Vardark correction of dark states, orbit "+str(self.args.orbit)+", pix "+str(self.args.pixnr)+"\n")
-        fig.set_xlabel("Orbit phase")
-        fig.set_ylabel("Dark signal (BU)")
-        fig.set_xlim([0,self.orb_window+1])
+        fig.set_xlim([0+self.args.orbit, self.orb_window+self.args.orbit])
+        fig.set_xlabel("Orbit")
+        fig.ticklabel_format(useOffset=False)
 
-        for i_orb in range(self.orb_window):
+        if self.residual_mode:
 
-            # dark states
-            ph_st = (self.phases_list[i_orb])
-            rd = (self.readouts_list[i_orb])[:,pixnr]
-            si = (self.sigmas_list[i_orb])[:,pixnr]
-            fig.errorbar(ph_st, rd, yerr=si, ls='none', marker='o', label="dark states")
+            fig.set_title("Residuals of vardark correction, pix "+str(self.args.pixnr)+"\n")
+            fig.set_ylabel("Dark residual (BU)")
+            fig.plot([0,100000], [0,0], label="zero")
 
-            # vardark model
-            for i_pet in range(len(pets)):
+            for i_orb in range(self.orb_window):
 
+                # dark states
+                ph_st = (self.phases_list[i_orb])
+                rd = (self.readouts_list[i_orb])[:,pixnr]
+                si = (self.sigmas_list[i_orb])[:,pixnr]
+                pe = (self.rd_pets[i_orb])
+
+                # vardark model
                 lc = (self.lcs_lin[i_orb])[pixnr]
                 trend = (self.trends_lin[i_orb])[pixnr]
                 plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                ph = orbphase+float(i_orb) -.12
-                x = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
+                x_model = ph_st+.12-float(i_orb), pe
+                #print(self.channel_phase, ph_st, rd, pe, scia_dark_fun2(plin, x_model))
+                x_plot = ph_st + self.args.orbit
+                fig.errorbar(x_plot, rd-scia_dark_fun2(plin, x_model), yerr=si, ls='none', marker='o', c=cols[0]) #marker='+', 
 
-                fig.plot(ph, scia_dark_fun2(plin, x), c=cols[i_pet], label="lin orbvar "+str(pets[i_pet])) #marker='+', 
-                #fig.plot(ph, scia_dark_fun2(pfit, x), c=cols[i_pet], label="fit orbvar "+str(pets[i_pet]))
+        else:
+
+            fig.set_title("Vardark correction of dark states, pix "+str(self.args.pixnr)+"\n")
+            fig.set_ylabel("Dark signal (BU)")
+
+            for i_orb in range(self.orb_window):
+
+                # dark states
+                ph_st = (self.phases_list[i_orb])
+                rd = (self.readouts_list[i_orb])[:,pixnr]
+                si = (self.sigmas_list[i_orb])[:,pixnr]
+                fig.errorbar(ph_st+self.args.orbit, rd, yerr=si, ls='none', marker='o', label="dark states")
+
+                # vardark model
+                for i_pet in range(len(pets)):
+
+                    lc = (self.lcs_lin[i_orb])[pixnr]
+                    trend = (self.trends_lin[i_orb])[pixnr]
+                    plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
+                    ph = orbphase+float(i_orb) -.12
+                    x_model = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
+
+                    x_plot = ph + self.args.orbit
+                    fig.plot(x_plot, scia_dark_fun2(plin, x_model), c=cols[i_pet], linewidth=2.0, label="lin orbvar "+str(pets[i_pet])) #marker='+', 
+                    #fig.plot(ph, scia_dark_fun2(pfit, x_model), c=cols[i_pet], label="fit orbvar "+str(pets[i_pet]))
 
         if self.args.legend:
             fig.legend(loc='upper right', scatterpoints=10)
-            #fig.legend()
 
     # execute this when Show legend check box is clicked
     def OnToggleLegend(self, event):
@@ -315,26 +353,30 @@ class MVarDarkPlotter():
     def OnKey(self, event):
         key = event.GetKeyCode()
         print(key)
-        if key == 314:
+        if key == 314: #<- : pixnr down
             self.args.pixnr -= 1
             if self.args.pixnr < 0:
                 self.args.pixnr = 0
             self.view.refresh_plot()
-        elif key == 316:
+        elif key == 316: #-> : pixnr up
             self.args.pixnr += 1
             if self.args.pixnr > 1023:
                 self.args.pixnr = 1023
             self.view.refresh_plot()
-        if key == 315:
+        elif key == 315: #arrow up : orbit up
             self.args.orbit += 1
             if self.args.orbit < 0:
                 self.args.orbit = 0
             self.loaded = False
             self.view.refresh_plot()
-        elif key == 317:
+        elif key == 317: #arrow down : orbit down
             self.args.orbit -= 1
             if self.args.orbit > 60000:
                 self.args.orbit = 60000
+            self.loaded = False
+            self.view.refresh_plot()
+        elif key == 82: #R(esiduals) (toggle)
+            self.residual_mode = not self.residual_mode
             self.loaded = False
             self.view.refresh_plot()
 

@@ -107,8 +107,10 @@ def extract_two_dark_states_(orbit, stateid1, stateid2):
     noise1 = numpy.concatenate((noise8_, noise63_))
     ephases = phaseconv.get_phase(jds)
     tdet = numpy.concatenate((state8_tdet, state63_tdet))
+    pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63))
+    idx_nosunrise = (ephases < .35) | (ephases > .42)
 
-    return ephases, jds, readouts1, noise1, tdet
+    return ephases[idx_nosunrise], jds[idx_nosunrise], readouts1[idx_nosunrise,:], noise1[idx_nosunrise,:], tdet[idx_nosunrise], pet[idx_nosunrise]
 
 # extract two dark states from two orbits
 def extract_two_dark_states(orbit, stateid1, stateid2):
@@ -204,7 +206,9 @@ def extract_two_dark_states(orbit, stateid1, stateid2):
     ephases = phaseconv.get_phase(jds)
     ephases[n_exec1:n_exec] += 1.0 # second orbit should have orbit phase +1
 
-    return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases
+    idx_nosunrise = (ephases < .35) | (ephases > .42)
+
+    return numpy.sum(idx_nosunrise), all_state_phases[idx_nosunrise], pet[idx_nosunrise], coadd[idx_nosunrise], all_readouts[idx_nosunrise,:], all_sigmas[idx_nosunrise,:], ephases[idx_nosunrise]
 
 # TODO: later orbits have different dark state definitions..
 def extract_05_10_dark_states(orbit):
