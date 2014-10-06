@@ -27,7 +27,7 @@ from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
 from envisat import PhaseConverter
-from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #-------------------------SECTION VERSION-----------------------------------
@@ -43,6 +43,10 @@ _dbVersion = {'major': 0,
               'revision' : 0}
 
 #- globals ---------------------------------------------------------------------
+
+# orbit phase at which trending point lies. eclipse phase definition
+trending_phase = 0.12 # orb < 43362
+#trending_phase = 0.35
 
 nlc = NonlinCorrector()
 phaseconv = PhaseConverter()
@@ -61,6 +65,7 @@ def scia_dark_residuals1e(p, data):
 
 # extract two dark states from one orbit
 def extract_two_dark_states_(orbit, stateid1, stateid2):
+    print("specified state ids = ", stateid1, stateid2)
     # orbit 1
     orbrange = [orbit,orbit]
     states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
@@ -73,7 +78,7 @@ def extract_two_dark_states_(orbit, stateid1, stateid2):
     for idx_exec in range(n_exec1_8):
         readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
     pet8 = states['pet'][0]
-    #print('pet8=',pet8)
+    print('pet8=',pet8)
     coadd8 = states['coadd'][0]
     readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
     noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
@@ -91,7 +96,7 @@ def extract_two_dark_states_(orbit, stateid1, stateid2):
     for idx_exec in range(n_exec1_63):
         readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
     pet63 = states63['pet'][0]
-    #print('pet63=',pet63)
+    print('pet63=',pet63)
     coadd63 = states['coadd'][0]
     readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
     noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
@@ -210,13 +215,16 @@ def extract_two_dark_states(orbit, stateid1, stateid2):
 
     return numpy.sum(idx_nosunrise), all_state_phases[idx_nosunrise], pet[idx_nosunrise], coadd[idx_nosunrise], all_readouts[idx_nosunrise,:], all_sigmas[idx_nosunrise,:], ephases[idx_nosunrise]
 
-# TODO: later orbits have different dark state definitions..
 def extract_05_10_dark_states(orbit):
-    return extract_two_dark_states(orbit, 8, 63)
+    stateid_05 = get_darkstateid(0.5, orbit)
+    stateid_10 = get_darkstateid(1.0, orbit)
+    print("STATE IDs = ", stateid_05, stateid_10)
+    return extract_two_dark_states(orbit, stateid_05, stateid_10)
 
-# TODO: later orbits have different dark state definitions..
 def extract_short_dark_states(orbit):
-    return extract_two_dark_states(orbit, 26, 46)
+    stateid_1_16 = get_darkstateid(0.0625, orbit)
+    stateid_1_8 = get_darkstateid(0.125, orbit)
+    return extract_two_dark_states(orbit, stateid_1_16, stateid_1_8)
 
 def extract_dark_states(orbit, shortFlag=False, longFlag=True):
     #print(shortFlag, longFlag)
@@ -457,8 +465,8 @@ def compute_trend(orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
 
         ephases1 = ephases[numpy.where(ephases < 1)]
         ephases2 = ephases[numpy.where(ephases >= 1)]
-        abs_dist1 = numpy.abs(ephases - .12)
-        abs_dist2 = numpy.abs(ephases - 1.12)
+        abs_dist1 = numpy.abs(ephases - trending_phase)
+        abs_dist2 = numpy.abs(ephases - 1 - trending_phase)
         idx1 = (numpy.argsort(abs_dist1))[0:5]
         idx2 = (numpy.argsort(abs_dist2))[0:5]
         #idx1 = numpy.where(ephases < 1.0)
@@ -476,7 +484,7 @@ def compute_trend(orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
         #lcs[pixnr] = avg1 - trends[pixnr]*phi1 - amps[pixnr]*( cos(2*pi*(phi1+phaseshift)) + amp2*cos(4*pi*(phi1+phaseshift2)) )
 
         # lc at intercept
-        lcs[pixnr] = avg1 - trends[pixnr]*0 - amps[pixnr]*( cos(2*pi*(.12+phaseshift)) + amp2*cos(4*pi*(.12+phaseshift2)) )
+        lcs[pixnr] = avg1 - trends[pixnr]*0 - amps[pixnr]*( cos(2*pi*(trending_phase+phaseshift)) + amp2*cos(4*pi*(trending_phase+phaseshift2)) )
 
     return trends, lcs
 

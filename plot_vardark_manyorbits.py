@@ -37,7 +37,7 @@ from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
-from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend, extract_two_dark_states_
+from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend, extract_two_dark_states_, get_darkstateid, trending_phase
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 # Used to guarantee to use at least Wx2.8
@@ -164,7 +164,7 @@ class MVarDarkPlotter():
         orbit = self.args.orbit
         for i_orb in range(self.orb_window):
             orb = orbit + i_orb
-            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orb, 8, 63)
+            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orb, 8, 63) # TODO: correct state ids for entire mission
             # TODO!
             phi += i_orb
             for i in range(phi.size):
@@ -181,7 +181,7 @@ class MVarDarkPlotter():
         monthly_orbit = self.ofilt.get_closest_monthly(self.args.orbit)
         use_short_states = False
         use_long_states = True
-        pixnr = 590
+        pixnr = self.args.pixnr
 
         if self.old_monthly != monthly_orbit:
             (lst) = fit_monthly(monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states)
@@ -217,13 +217,12 @@ class MVarDarkPlotter():
         self.sigmas_list = list()
         self.phases_list = list()
         self.rd_pets = list()
-        # TODO: doesn't work throughout the entire mission.. 
         if use_long_states:
-            s1 = 8
-            s2 = 63
+            s1 = get_darkstateid(1.0, normal_orbit)
+            s2 = get_darkstateid(0.5, normal_orbit)
         elif use_short_states:
-            s1 = 26
-            s2 = 46
+            s1 = get_darkstateid(0.125, normal_orbit)
+            s2 = get_darkstateid(0.0625, normal_orbit)
         for i_orb in range(self.orb_window):
             #print("window orbit", i_orb)
             orb = normal_orbit+i_orb
@@ -294,7 +293,7 @@ class MVarDarkPlotter():
                 lc = (self.lcs_lin[i_orb])[pixnr]
                 trend = (self.trends_lin[i_orb])[pixnr]
                 plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                x_model = ph_st+.12-float(i_orb), pe
+                x_model = ph_st + trending_phase -float(i_orb), pe
                 #print(self.channel_phase, ph_st, rd, pe, scia_dark_fun2(plin, x_model))
                 x_plot = ph_st + self.args.orbit
                 fig.errorbar(x_plot, rd-scia_dark_fun2(plin, x_model), yerr=si, ls='none', marker='o', c=cols[0]) #marker='+', 
@@ -318,7 +317,7 @@ class MVarDarkPlotter():
                     lc = (self.lcs_lin[i_orb])[pixnr]
                     trend = (self.trends_lin[i_orb])[pixnr]
                     plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                    ph = orbphase+float(i_orb) -.12
+                    ph = orbphase+float(i_orb) - trending_phase
                     x_model = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
 
                     x_plot = ph + self.args.orbit

@@ -235,6 +235,70 @@ class orbitfilter:
         else:
             return self.monthlies[idx[0]]
 
+class OrbitRangeError(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
+
+# for given pet and absolute orbit number, return the the right dark state id
+def get_darkstateid(pet, orbit):
+    if orbit >= 1572 and orbit < 4144:
+        if pet == 2:
+            return 67
+        elif pet == 1:
+            return 8 # ?
+        elif pet == 0.5:
+            return 63
+        elif pet == 0.125:
+            return 26 # ?
+        elif pet == 0.0625:
+            return 46
+        else:
+            raise PetNotFoundError("pet not present between orbits 1572 and 4144")
+    if orbit >= 4151 and orbit < 7268:
+        if pet == 2:
+            return 67
+        elif pet == 1:
+            return 8
+        elif pet == 0.5:
+            return 63
+        elif pet == 0.125:
+            return 26
+        elif pet == 0.0625:
+            return 46
+        else:
+            raise PetNotFoundError("pet not present between orbits 4151 and 7268")
+    if orbit >= 7268 and orbit < 43362:
+        if pet == 2:
+            return 67
+        elif pet == 1:
+            return 8
+        elif pet == 0.5:
+            return 63
+        elif pet == 0.125:
+            return 26
+        elif pet == 0.0625:
+            return 46
+        else:
+            raise PetNotFoundError("pet not present between orbits 7268 and 43362")
+    elif orbit >= 43362 and orbit < 60000:
+        if pet == 1:
+            return 67
+        elif pet == 0.5:
+            return 26
+        elif pet == 0.375:
+            return 63
+        elif pet == 0.125:
+            return 8
+        elif pet == 0.0625:
+            return 46
+        else:
+            raise PetNotFoundError("pet not present after orbit 43362")
+    else:
+        # very early orbit?
+        raise OrbitRangeError("unknown orbit range")        
+
 # reads extracted state executions from database
 def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
 
@@ -273,9 +337,14 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
         ds_did      = gid['readoutMean']
         dict['readoutMean'] = ds_did[metaindx,:]
 
+    # export error-in-the-mean instead of plain stddev.
     if readoutNoise:
         ds_did       = gid['readoutNoise']
-        dict['readoutNoise'] = ds_did[metaindx,:]
+        readoutNoise = ds_did[metaindx,:]
+        ds_did       = gid['readoutCount']
+        readoutNoise /= numpy.sqrt(ds_did[metaindx,:])
+        readoutNoise *= 1.4826 # sigma = MAD * K 
+        dict['readoutNoise'] = readoutNoise
 
     if orbitList:
         ds_did = gid['orbitList']
@@ -308,11 +377,12 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
         cluspets = cluspets[i_change]
         cluscoad = cluscoad[i_change]
         for i_clus in range(3): #ch8 is last 3 clusters.. always 40 clusters
-          clus_start = clusoff1[i_clus]
-          clus_end   = clusoff1[i_clus+1]-1
-          pet[clus_start:clus_end] = cluspets[i_clus+37]
-          coadd[clus_start:clus_end] = cluscoad[i_clus+37]
+            clus_start = clusoff1[i_clus]
+            clus_end   = clusoff1[i_clus+1]
+            pet[clus_start:clus_end] = cluspets[i_clus+37]
+            coadd[clus_start:clus_end] = cluscoad[i_clus+37]
     dict['pet'] = pet - petcorr # TODO: ok for all states??
+    print("FOUND PET=", pet)
     dict['coadd'] = coadd
 
     fid.close()
