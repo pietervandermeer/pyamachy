@@ -63,48 +63,35 @@ def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
 
-# extract two dark states from one orbit
-def extract_two_dark_states_(orbit, stateid1, stateid2):
-    print("specified state ids = ", stateid1, stateid2)
-    # orbit 1
+# read ch8 data for 1 orbit and 1 state id
+def extract_state(orbit, stateid):
     orbrange = [orbit,orbit]
-    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
+    states = read_extracted_states(orbrange, stateid, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
-    jds1_8 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
+    jds = state_mtbl['julianDay'][:]
     readouts = states['readoutMean']
     noise = states['readoutNoise']
-    n_exec1_8 = readouts.shape[0]
-    for idx_exec in range(n_exec1_8):
+    n_exec = readouts.shape[0]
+    for idx_exec in range(n_exec):
         readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet8 = states['pet'][0]
-    print('pet8=',pet8)
-    coadd8 = states['coadd'][0]
-    readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
-    state8_phases = state_mtbl['orbitPhase'][:]
-    state8_tdet = state_mtbl['detectorTemp'][:]
-    state8_tdet = state8_tdet[:,7].flatten() # ch8
+    pet = states['pet'][0]
+    coadd = states['coadd'][0]
+    readouts_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
+    noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
+    phases = state_mtbl['orbitPhase'][:]
+    tdet = state_mtbl['detectorTemp'][:]
+    tdet = tdet[:,7].flatten() # ch8
+    return jds, readouts_, noise_, phases, tdet, pet, coadd
 
-    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states63['mtbl']
-    jds1_63 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
-    readouts = states63['readoutMean']
-    noise = states63['readoutNoise']
-    n_exec1_63 = readouts.shape[0]
-    for idx_exec in range(n_exec1_63):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet63 = states63['pet'][0]
-    print('pet63=',pet63)
-    coadd63 = states['coadd'][0]
-    readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
-    state63_phases = state_mtbl['orbitPhase'][:]
-    state63_tdet = state_mtbl['detectorTemp'][:]
-    state63_tdet = state63_tdet[:,7].flatten() # ch8
+# extract two dark states from one orbit
+def extract_two_dark_states_(orbit, stateid1, stateid2):
+    jds1_8, readouts8_, noise8_, state8_phases, state8_tdet, pet8, coadd8 = extract_state(orbit, stateid1)
+    n_exec1_8 = readouts8_.shape[0]
 
-    # glue data from first orbit
+    jds1_63, readouts63_, noise63_, state63_phases, state63_tdet, pet63, coadd63 = extract_state(orbit, stateid2)
+    n_exec1_63 = readouts63_.shape[0]
+
+    # glue state data, get eclipse phase, and filter out sunrise
     n_exec1 = n_exec1_8 + n_exec1_63
     jds = numpy.concatenate((jds1_8, jds1_63))
     state_phases1 = numpy.concatenate((state8_phases, state63_phases)) 
@@ -113,45 +100,19 @@ def extract_two_dark_states_(orbit, stateid1, stateid2):
     ephases = phaseconv.get_phase(jds)
     tdet = numpy.concatenate((state8_tdet, state63_tdet))
     pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63))
-    idx_nosunrise = (ephases < .35) | (ephases > .42)
+    ephases1 = numpy.mod(ephases, 1.)
+    idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
 
     return ephases[idx_nosunrise], jds[idx_nosunrise], readouts1[idx_nosunrise,:], noise1[idx_nosunrise,:], tdet[idx_nosunrise], pet[idx_nosunrise]
 
 # extract two dark states from two orbits
 def extract_two_dark_states(orbit, stateid1, stateid2):
     # orbit 1
-    orbrange = [orbit,orbit]
-    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states['mtbl']
-    jds1_8 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
-    readouts = states['readoutMean']
-    noise = states['readoutNoise']
-    n_exec1_8 = readouts.shape[0]
-    for idx_exec in range(n_exec1_8):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet8 = states['pet'][0]
-    #print('pet8=',pet8)
-    coadd8 = states['coadd'][0]
-    readouts8_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise8_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
-    state8_phases = state_mtbl['orbitPhase'][:]
+    jds1_8, readouts8_, noise8_, state8_phases, state8_tdet, pet8, coadd8 = extract_state(orbit, stateid1)
+    n_exec1_8 = readouts8_.shape[0]
 
-    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states63['mtbl']
-    jds1_63 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
-    readouts = states63['readoutMean']
-    noise = states63['readoutNoise']
-    n_exec1_63 = readouts.shape[0]
-    for idx_exec in range(n_exec1_63):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet63 = states63['pet'][0]
-    #print('pet63=',pet63)
-    coadd63 = states['coadd'][0]
-    readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
-    state63_phases = state_mtbl['orbitPhase'][:]
+    jds1_63, readouts63_, noise63_, state63_phases, state63_tdet, pet63, coadd63 = extract_state(orbit, stateid2)
+    n_exec1_63 = readouts63_.shape[0]
 
     # glue data from first orbit
     n_exec1 = n_exec1_8 + n_exec1_63
@@ -160,41 +121,17 @@ def extract_two_dark_states(orbit, stateid1, stateid2):
     noise1 = numpy.concatenate((noise8_, noise63_))
 
     # orbit 2
-    orbrange = [orbit+1,orbit+1]
-    states = read_extracted_states(orbrange, stateid1, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states['mtbl']
-    jds2_8 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
-    readouts = states['readoutMean']
-    noise = states['readoutNoise']
-    n_exec2_8 = readouts.shape[0]
-    for idx_exec in range(n_exec2_8):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    readouts2_8 = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise2_8 = noise[:,7*1024:8*1024] / numpy.sqrt(coadd8)
-    state_phases2 = state_mtbl['orbitPhase'][:]
+    jds2_8, readouts2_8, noise2_8, state_phases2_8, state_tdet2_8, pet8, coadd8 = extract_state(orbit+1, stateid1)
+    n_exec2_8 = readouts2_8.shape[0]
 
-    states63 = read_extracted_states(orbrange, stateid2, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states63['mtbl']
-    jds2_63 = state_mtbl['julianDay'][:]
-    #print(states['readoutMean'].shape)
-    readouts = states63['readoutMean']
-    noise = states63['readoutNoise']
-    n_exec2_63 = readouts.shape[0]
-    for idx_exec in range(n_exec2_63):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet63 = states63['pet'][0]
-    #print('pet63=',pet63)
-    coadd63 = states['coadd'][0]
-    readouts63_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise63_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd63)
-    state63_phases = state_mtbl['orbitPhase'][:]
+    jds2_63, readouts2_63, noise2_63, state_phases2_63, state_tdet2_63, pet63, coadd63 = extract_state(orbit+1, stateid2)
+    n_exec2_63 = readouts2_63.shape[0]
 
     # glue data from second orbit
     n_exec2 = n_exec2_8 + n_exec2_63
-    state_phases2 = numpy.concatenate((state_phases2, state63_phases)) 
-    readouts2 = numpy.concatenate((readouts2_8, readouts63_))
-    noise2 = numpy.concatenate((noise2_8, noise63_))
+    state_phases2 = numpy.concatenate((state_phases2_8, state_phases2_63)) 
+    readouts2 = numpy.concatenate((readouts2_8, readouts2_63))
+    noise2 = numpy.concatenate((noise2_8, noise2_63))
 
     # combine orbit data
     n_exec = n_exec1 + n_exec2
@@ -209,13 +146,14 @@ def extract_two_dark_states(orbit, stateid1, stateid2):
     # convert all juliandates to eclipse phases
     #print(jds.size, jds)
     ephases = phaseconv.get_phase(jds)
+    ephases1 = numpy.mod(ephases, 1.)
     ephases[n_exec1:n_exec] += 1.0 # second orbit should have orbit phase +1
 
-    idx_nosunrise = (ephases < .35) | (ephases > .42)
+    idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
 
     return numpy.sum(idx_nosunrise), all_state_phases[idx_nosunrise], pet[idx_nosunrise], coadd[idx_nosunrise], all_readouts[idx_nosunrise,:], all_sigmas[idx_nosunrise,:], ephases[idx_nosunrise]
 
-def extract_05_10_dark_states(orbit):
+def extract_long_dark_states(orbit):
     stateid_05 = get_darkstateid(0.5, orbit)
     stateid_10 = get_darkstateid(1.0, orbit)
     print("STATE IDs = ", stateid_05, stateid_10)
@@ -231,7 +169,7 @@ def extract_dark_states(orbit, shortFlag=False, longFlag=True):
     if shortFlag:
         n_exec_s, all_state_phases_s, pet_s, coadd_s, all_readouts_s, all_sigmas_s, ephases_s = extract_short_dark_states(orbit)
     if longFlag:
-        n_exec_l, all_state_phases_l, pet_l, coadd_l, all_readouts_l, all_sigmas_l, ephases_l = extract_05_10_dark_states(orbit)
+        n_exec_l, all_state_phases_l, pet_l, coadd_l, all_readouts_l, all_sigmas_l, ephases_l = extract_long_dark_states(orbit)
 
     if shortFlag and longFlag:
         n_exec = n_exec_s+n_exec_l
