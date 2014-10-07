@@ -38,3 +38,13 @@ void _GET_SCIA_ROE_ORBITPHASE(bool eclipseMode, bool saaFlag, int32_t num, int32
     }
 }
 
+void _GET_SCIA_ROE_ORBITPHASE_ORBIT(bool eclipseMode, bool saaFlag, int32_t num, int32_t *orbit, float *orbitPhase, double *julianDay)
+{
+    int32_t nm;
+    for (nm = 0; nm < num; nm++)
+    {
+        GET_SCIA_ROE_INFO( eclipseMode, julianDay[nm],
+                           orbit+nm, &saaFlag, orbitPhase+nm );
+        //printf("orb %d = %d\n", nm, orbit[nm]);
+    }
+}

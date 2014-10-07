@@ -17,6 +17,10 @@
 #   Boston, MA  02111-1307, USA.
 #
 
+#
+# this program is basically just a collection of routines to test the old simudark plot monthly calibration orbits, etc.
+# 
+
 from __future__ import print_function
 from __future__ import division
 
@@ -24,11 +28,13 @@ import argparse
 import matplotlib
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt2
 import numpy
 from numpy import arange, sin, pi
 import h5py
 import ctypes as ct
-from sciamachy_module import NonlinCorrector
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr
+from envisat import PhaseConverter
 
 # Used to guarantee to use at least Wx2.8
 import wxversion
@@ -78,56 +84,6 @@ def read_simudark(orbit, ao=None, lc=None, amp1=None):
 
     dict['status'] = 0
     return(dict)    
-
-# reads extracted state executions from database
-def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
-
-    if in_orbitlist is None:
-        if len(orbitrange) is not 2:
-            print('read_extracted_states: orbitrange should have 2 elements')
-            return
-
-    dict = {}
-
-    #
-    # obtain indices to entries of the requested orbit and state
-    #
-
-    fid = h5py.File(calib_db, 'r') # generates an exception
-    gid = fid["State_"+str('%02d'%state_id)] # generates an exception
-    mt_did = gid['metaTable']
-    orbitlist = (gid['orbitList'])[:]
-    if in_orbitlist is not None:
-        #metaindx = orbitlist = in_orbitlist
-        metaindx = numpy.in1d(orbitlist, in_orbitlist)
-    else:
-        print('orbitrange=', orbitrange)
-        metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-        print(metaindx)
-
-    if metaindx[0].size is 0:
-        print('read_extracted_states: orbit range not present in database')
-        dict['status'] = -1
-        return dict
-
-    mtbl = mt_did[metaindx]
-    dict['mtbl'] = mtbl
-
-    if readoutMean:
-        ds_did      = gid['readoutMean']
-        dict['readoutMean'] = ds_did[metaindx,:]
-
-    if readoutNoise:
-        ds_did       = gid['readoutNoise']
-        dict['readoutNoise'] = ds_did[metaindx,:]
-
-    if orbitList:
-        ds_did = gid['orbitList']
-        dict['orbitList'] = ds_did[metaindx]
-
-    fid.close()
-    dict['status'] = 0
-    return(dict)
 
 #-------------------------------------------------------------------------------
 # computes the variable part of the simudark product for specified orbital 
@@ -204,7 +160,6 @@ def check_eclipse_calib(pixnr):
     # correct for dark current with simudark v1
     #
 
-    petcorr = 1.18125e-3
     simudark = read_simudark(orbit, ao=True, lc=True, amp1=True)
     simudark_mtbl = simudark['mtbl']
     state_phases = state_mtbl['orbitPhase'][:]
@@ -310,10 +265,37 @@ def check_darkstates():
         #print(vals)
         #print(hor_axis.shape)
         #print(hor_axis)
+        print(numpy.mean(vals))
         plt.scatter(hor_axis, vals-numpy.mean(vals), color=colors[i%7])
         #plt.scatter(hor_axis, vals, color=colors[i%7])
      
     #plt.savefig('test.png', dpi=100)
+    plt.show()
+    return
+
+# plot ch8 darks vs julian day
+def plot_jd_darks():
+
+    nlc = NonlinCorrector()
+    phaseconv = PhaseConverter()
+
+#    orbitrange = [27016,27029]
+    orbitrange = [24038,24051]
+    db_name = "/SCIA/SDMF31/sdmf_extract_calib.h5"
+
+    data = read_extracted_states(orbitrange, 8, db_name, readoutMean=True, readoutNoise=True, orbitList=True)
+
+    jds = (data['mtbl'])['julianDay']
+    ephases, orbits = phaseconv.get_phase(jds, getOrbits=True)
+    print(orbits)
+    readouts = (data['readoutMean'])
+    n_exec = readouts.shape[0]
+    for idx_exec in range(n_exec):
+        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
+
+    plt.ticklabel_format(useOffset=False)
+    plt.scatter(jds, readouts[:,7*1024+args.pixnr], c='b')
+    plt.scatter(orbits+ephases, readouts[:,7*1024+args.pixnr], c='r')
     plt.show()
     return
 
@@ -322,11 +304,11 @@ def check_darkstates():
 #
 
 parser = argparse.ArgumentParser()
-parser.add_argument("pixnr")
+parser.add_argument("--pixnr", default=597)
 args = parser.parse_args()
 print(args.pixnr)
 
 #test_simudark_orbvar_function()
-check_eclipse_calib(int(args.pixnr))
+#check_eclipse_calib(int(args.pixnr))
 #check_darkstates()
-
+plot_jd_darks()

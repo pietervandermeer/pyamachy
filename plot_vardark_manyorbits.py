@@ -80,7 +80,7 @@ class MVarDarkPlotter():
         parser.add_argument('-l', '--legend', action='store_true', 
                             dest='legend', help='displays legend')
         parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24038)
-        parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=120)
+        parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=597)
         self.args = parser.parse_args()
         self.residual_mode = False
 
@@ -164,7 +164,7 @@ class MVarDarkPlotter():
         orbit = self.args.orbit
         for i_orb in range(self.orb_window):
             orb = orbit + i_orb
-            phi, jds, readouts, sigmas, tdet = extract_two_dark_states_(orb, 8, 63) # TODO: correct state ids for entire mission
+            phi, jds, readouts, sigmas, tdet, coadd = extract_two_dark_states_(orb, 8, 63) # TODO: correct state ids for entire mission
             # TODO!
             phi += i_orb
             for i in range(phi.size):
@@ -207,6 +207,7 @@ class MVarDarkPlotter():
         print('aos=', aos)
         print('lc=', lcs_fit)
         print('amp=', amps)
+        print('amp2=', channel_amp2)
         print('trend=', trends_fit)
 
         print('ao=', aos[pixnr], 'lc=', lcs_fit[pixnr], 'amp=', amps[pixnr], 'trend=', trends_fit[pixnr])
@@ -228,8 +229,8 @@ class MVarDarkPlotter():
             orb = normal_orbit+i_orb
             (lst) = extract_two_dark_states_(orb, stateid1=s1, stateid2=s2)
             #n_exec, self.polar_phases, readout_pet, readout_coadd, self.readouts, self.sigmas, self.readout_phases = lst
-            self.readout_phases, jds, self.readouts, self.sigmas, tdet, readout_pet = lst
-            self.phases_list.append(self.readout_phases + float(i_orb))
+            self.readout_phases, jds, self.readouts, self.sigmas, tdet, readout_pet, readout_coadd = lst
+            self.phases_list.append(self.readout_phases)
             self.readouts_list.append(self.readouts)
             self.sigmas_list.append(self.sigmas)
 
@@ -265,7 +266,7 @@ class MVarDarkPlotter():
         pts_per_orbit = 50
         n_orbits = 1
         total_pts = n_orbits*pts_per_orbit+1
-        orbphase = (numpy.arange(total_pts)/float(pts_per_orbit)) #+.12
+        orbphase = (numpy.arange(total_pts)/float(pts_per_orbit)) 
         coadd = numpy.ones(total_pts)
         pets = numpy.array([1/2., 1]) - petcorr
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
@@ -295,7 +296,7 @@ class MVarDarkPlotter():
                 plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
                 x_model = ph_st + trending_phase -float(i_orb), pe
                 #print(self.channel_phase, ph_st, rd, pe, scia_dark_fun2(plin, x_model))
-                x_plot = ph_st + self.args.orbit
+                x_plot = ph_st #+ self.args.orbit
                 fig.errorbar(x_plot, rd-scia_dark_fun2(plin, x_model), yerr=si, ls='none', marker='o', c=cols[0]) #marker='+', 
 
         else:
@@ -309,7 +310,8 @@ class MVarDarkPlotter():
                 ph_st = (self.phases_list[i_orb])
                 rd = (self.readouts_list[i_orb])[:,pixnr]
                 si = (self.sigmas_list[i_orb])[:,pixnr]
-                fig.errorbar(ph_st+self.args.orbit, rd, yerr=si, ls='none', marker='o', label="dark states")
+                #+self.args.orbit
+                fig.errorbar(ph_st, rd, yerr=si, ls='none', marker='o', label="dark states")
 
                 # vardark model
                 for i_pet in range(len(pets)):
@@ -317,7 +319,7 @@ class MVarDarkPlotter():
                     lc = (self.lcs_lin[i_orb])[pixnr]
                     trend = (self.trends_lin[i_orb])[pixnr]
                     plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                    ph = orbphase+float(i_orb) - trending_phase
+                    ph = orbphase+float(i_orb) #- trending_phase
                     x_model = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
 
                     x_plot = ph + self.args.orbit
@@ -376,16 +378,9 @@ class MVarDarkPlotter():
             self.view.refresh_plot()
         elif key == 82: #R(esiduals) (toggle)
             self.residual_mode = not self.residual_mode
-            self.loaded = False
             self.view.refresh_plot()
 
 #- main ------------------------------------------------------------------------
-
-#parser = argparse.ArgumentParser()
-#parser.add_argument("pixnr")
-#args = parser.parse_args()
-#print(args.pixnr)
-#check_eclipse_calib(int(args.pixnr))
 
 if __name__ == '__main__':
 

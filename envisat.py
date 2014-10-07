@@ -59,7 +59,7 @@ class PhaseConverter:
     def __init__(self):
         self.phaselib = ct.CDLL('phaselib.so')
 
-    def get_phase(self, jds, eclipseMode=True):
+    def get_phase(self, jds, eclipseMode=True, getOrbits=False):
         """
         input: jds: numpy array of julian dates or a float64 scalar
                eclipseMode: boolean flag to indicate eclipse mode or polar mode
@@ -79,5 +79,15 @@ class PhaseConverter:
         jds = jds.astype(numpy.float64)
         jds_c = jds.ctypes.data_as(ct.POINTER(ct.c_double))
 
-        self.phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
-        return phases
+        # orbits = numpy.empty(n_records)
+        # orbits_c = orbits.ctypes.data_as(ct.POINTER(ct.c_long))
+        orbits = numpy.empty(n_records) # TODO: directly specify dtype=float64 or so?
+        orbits = orbits.astype(numpy.int32)
+        orbits_c = orbits.ctypes.data_as(ct.POINTER(ct.c_long))
+
+        if getOrbits:
+            self.phaselib._GET_SCIA_ROE_ORBITPHASE_ORBIT(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), orbits_c, phases_c, jds_c) 
+            return numpy.float64(phases), orbits
+        else:
+            self.phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
+            return phases

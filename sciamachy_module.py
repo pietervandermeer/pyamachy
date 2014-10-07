@@ -382,7 +382,6 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
             pet[clus_start:clus_end] = cluspets[i_clus+37]
             coadd[clus_start:clus_end] = cluscoad[i_clus+37]
     dict['pet'] = pet - petcorr 
-    print("FOUND PET=", pet)
     dict['coadd'] = coadd
 
     fid.close()
