@@ -18,7 +18,7 @@
 #
 
 """
-plots computed vardark product and overplots state executions.
+plots computed vardark product and overplots state executions. also has a mode to show residuals ('R' key)
 """
 
 from __future__ import print_function
@@ -36,8 +36,8 @@ import matplotlib
 from viewers import GUIViewer, DumpingViewer
 import envisat
 import distinct_colours
-from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter
-from vardark_module import extract_dark_states, fit_monthly, fit_eclipse_orbit, compute_trend, extract_two_dark_states_, get_darkstateid, trending_phase
+from sciamachy_module import NonlinCorrector, petcorr, orbitfilter
+from vardark_module import fit_monthly, fit_eclipse_orbit, compute_trend, get_darkstateid, trending_phase, AllDarks
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 # Used to guarantee to use at least Wx2.8
@@ -122,6 +122,12 @@ class MVarDarkPlotter():
         self.ofilt = orbitfilter()
 
         #
+        # initialize GUI kdb state
+        #
+
+        self.shift = False
+
+        #
         # Pass control options on to GUIViewer
         #
         
@@ -178,13 +184,13 @@ class MVarDarkPlotter():
         #
 
         normal_orbit = self.args.orbit
-        monthly_orbit = self.ofilt.get_closest_monthly(self.args.orbit)
+        self.monthly_orbit = self.ofilt.get_closest_monthly(self.args.orbit)
         use_short_states = False
         use_long_states = True
         pixnr = self.args.pixnr
 
-        if self.old_monthly != monthly_orbit:
-            (lst) = fit_monthly(monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states)
+        if self.old_monthly != self.monthly_orbit:
+            (lst) = fit_monthly(alldarks, self.monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states, verbose=self.args.verbose)
             channel_phase, channel_phase2, aos, lcs_fit, amps, channel_amp2, trends_fit = lst
             self.aos = aos
             self.lcs_fit = lcs_fit
@@ -193,7 +199,7 @@ class MVarDarkPlotter():
             self.trends_fit = trends_fit
             self.channel_phase = channel_phase
             self.channel_phase2 = channel_phase2
-            self.old_monthly = monthly_orbit
+            self.old_monthly = self.monthly_orbit
         else:
             aos = self.aos
             lcs_fit = self.lcs_fit
@@ -202,15 +208,15 @@ class MVarDarkPlotter():
             trends_fit = self.trends_fit
             channel_phase = self.channel_phase
             channel_phase2 = self.channel_phase2
-        print('channel_phase=', channel_phase)
-        print('channel_phase2=', channel_phase2)
-        print('aos=', aos)
-        print('lc=', lcs_fit)
-        print('amp=', amps)
-        print('amp2=', channel_amp2)
-        print('trend=', trends_fit)
-
-        print('ao=', aos[pixnr], 'lc=', lcs_fit[pixnr], 'amp=', amps[pixnr], 'trend=', trends_fit[pixnr])
+        if self.args.verbose:
+            print('channel_phase=', channel_phase)
+            print('channel_phase2=', channel_phase2)
+            print('aos=', aos)
+            print('lc=', lcs_fit)
+            print('amp=', amps)
+            print('amp2=', channel_amp2)
+            print('trend=', trends_fit)
+            print('ao=', aos[pixnr], 'lc=', lcs_fit[pixnr], 'amp=', amps[pixnr], 'trend=', trends_fit[pixnr])
 
         self.trends_lin = list()
         self.lcs_lin = list()
@@ -218,27 +224,30 @@ class MVarDarkPlotter():
         self.sigmas_list = list()
         self.phases_list = list()
         self.rd_pets = list()
-        if use_long_states:
-            s1 = get_darkstateid(1.0, normal_orbit)
-            s2 = get_darkstateid(0.5, normal_orbit)
-        elif use_short_states:
-            s1 = get_darkstateid(0.125, normal_orbit)
-            s2 = get_darkstateid(0.0625, normal_orbit)
+        # if use_long_states:
+        #     s1 = get_darkstateid(1.0, normal_orbit)
+        #     s2 = get_darkstateid(0.5, normal_orbit)
+        # elif use_short_states:
+        #     s1 = get_darkstateid(0.125, normal_orbit)
+        #     s2 = get_darkstateid(0.0625, normal_orbit)
         for i_orb in range(self.orb_window):
             #print("window orbit", i_orb)
             orb = normal_orbit+i_orb
-            (lst) = extract_two_dark_states_(orb, stateid1=s1, stateid2=s2)
-            #n_exec, self.polar_phases, readout_pet, readout_coadd, self.readouts, self.sigmas, self.readout_phases = lst
-            self.readout_phases, jds, self.readouts, self.sigmas, tdet, readout_pet, readout_coadd = lst
+
+            #(lst) = extract_two_dark_states_(orb, stateid1=s1, stateid2=s2)
+            #self.readout_phases, jds, self.readouts, self.sigmas, tdet, readout_pet, readout_coadd = lst
+            (lst) = alldarks.get_range([orb,orb+.999])
+            n_exec, dummy, readout_pet, readout_coadd, self.readouts, self.sigmas, self.readout_phases = lst
+
             self.phases_list.append(self.readout_phases)
             self.readouts_list.append(self.readouts)
             self.sigmas_list.append(self.sigmas)
+            self.rd_pets.append(readout_pet)
 
             # directly compute constant part of lc and trend for averaged eclipse data points
-            trends, lcs = compute_trend(orb, aos, amps, channel_amp2, channel_phase, channel_phase2, shortFlag=use_short_states, longFlag=use_long_states)
+            trends, lcs = compute_trend(alldarks, orb, aos, amps, channel_amp2, channel_phase, channel_phase2, shortFlag=use_short_states, longFlag=use_long_states)
             self.trends_lin.append(trends)
             self.lcs_lin.append(lcs)
-            self.rd_pets.append(readout_pet)
 
         #self.dump_pixel()
 
@@ -266,7 +275,7 @@ class MVarDarkPlotter():
         pts_per_orbit = 50
         n_orbits = 1
         total_pts = n_orbits*pts_per_orbit+1
-        orbphase = (numpy.arange(total_pts)/float(pts_per_orbit)) 
+        orbphase = (numpy.arange(total_pts)/float(pts_per_orbit))
         coadd = numpy.ones(total_pts)
         pets = numpy.array([1/2., 1]) - petcorr
         cols = ['b','g','r','y','k','m','#ff00ff','#ffff00']
@@ -370,6 +379,19 @@ class MVarDarkPlotter():
                 self.args.orbit = 0
             self.loaded = False
             self.view.refresh_plot()
+        elif key == 78: # 'n'ext monthly
+            print("curr monthly=",self.monthly_orbit)
+            new_monthly = self.ofilt.get_next_monthly(self.monthly_orbit)
+            self.args.orbit = new_monthly - (self.orb_window/2)
+            print("ORBIT=", self.args.orbit)
+            self.loaded = False
+            self.view.refresh_plot()
+        elif key == 80: # 'p'rev monthly
+            new_monthly = self.ofilt.get_previous_monthly(self.monthly_orbit)
+            self.args.orbit = new_monthly - (self.orb_window/2)
+            print("ORBIT=", self.args.orbit)
+            self.loaded = False
+            self.view.refresh_plot()
         elif key == 317: #arrow down : orbit down
             self.args.orbit -= 1
             if self.args.orbit > 60000:
@@ -379,8 +401,20 @@ class MVarDarkPlotter():
         elif key == 82: #R(esiduals) (toggle)
             self.residual_mode = not self.residual_mode
             self.view.refresh_plot()
+        elif key == 306: 
+            self.shift = not self.shift
 
 #- main ------------------------------------------------------------------------
+
+print("import darks state def 1")
+#alldarks = AllDarks([5750,43362], [1.0, 0.5])
+#alldarks = AllDarks([5750,43362], [1.0, 0.5])
+alldarks = AllDarks([23000,25000], [1.0, 0.5])
+#print("import darks state def 2")
+#alldarks.lump([43362,53200], [1.0, 0.5])
+#alldarks.lump([43362,43400], [1.0, 0.5])
+#print("finalize")
+#alldarks.finalize()
 
 if __name__ == '__main__':
 

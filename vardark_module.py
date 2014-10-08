@@ -27,7 +27,7 @@ from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
 from envisat import PhaseConverter
-from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid
+from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid, read_extracted_states_
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #-------------------------SECTION VERSION-----------------------------------
@@ -63,103 +63,16 @@ def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
 
-# read ch8 data for 1 orbit and 1 state id
-def extract_state(orbit, stateid):
-    orbrange = [orbit,orbit]
-    states = read_extracted_states(orbrange, stateid, fname, readoutMean=True, readoutNoise=True)
-    state_mtbl = states['mtbl']
-    jds = state_mtbl['julianDay'][:]
-    readouts = states['readoutMean']
-    noise = states['readoutNoise']
-    n_exec = readouts.shape[0]
-    for idx_exec in range(n_exec):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet = states['pet'][0]
-    coadd = states['coadd'][0]
-    readouts_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
-    phases = state_mtbl['orbitPhase'][:]
-    tdet = state_mtbl['detectorTemp'][:]
-    tdet = tdet[:,7].flatten() # ch8
-    return jds, readouts_, noise_, phases, tdet, pet, coadd
-
-# extract two dark states from one orbit
-def extract_two_dark_states_(orbit, stateid1, stateid2):
-    jds1_8, readouts8_, noise8_, state8_phases, state8_tdet, pet8, coadd8 = extract_state(orbit, stateid1)
-    n_exec1_8 = readouts8_.shape[0]
-
-    jds1_63, readouts63_, noise63_, state63_phases, state63_tdet, pet63, coadd63 = extract_state(orbit, stateid2)
-    n_exec1_63 = readouts63_.shape[0]
-
-    # glue state data, get eclipse phase, and filter out sunrise
-    n_exec1 = n_exec1_8 + n_exec1_63
-    jds = numpy.concatenate((jds1_8, jds1_63))
-    state_phases1 = numpy.concatenate((state8_phases, state63_phases))
-    readouts1 = numpy.concatenate((readouts8_, readouts63_))
-    noise1 = numpy.concatenate((noise8_, noise63_))
-    ephases, orbits = phaseconv.get_phase(jds, getOrbits=True)
-    ephases += orbits
-    tdet = numpy.concatenate((state8_tdet, state63_tdet))
-    pet = numpy.concatenate((numpy.zeros(n_exec1_8)+pet8, numpy.zeros(n_exec1_63)+pet63))
-    coadd = numpy.concatenate((numpy.zeros(n_exec1_8)+coadd8, numpy.zeros(n_exec1_63)+coadd63))
-    ephases1 = numpy.mod(ephases, 1.)
-    idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
-
-    return ephases[idx_nosunrise], jds[idx_nosunrise], readouts1[idx_nosunrise,:], noise1[idx_nosunrise,:], tdet[idx_nosunrise], pet[idx_nosunrise], coadd[idx_nosunrise]
-
-# extract two dark states from two orbits
-def extract_two_dark_states(orbit, stateid1, stateid2):
-    ephases1, jds1, readouts1, noise1, tdet1, pet1, coadd1 = extract_two_dark_states_(orbit, stateid1, stateid2)
-    ephases2, jds2, readouts2, noise2, tdet2, pet2, coadd2 = extract_two_dark_states_(orbit+1, stateid1, stateid2)
-
-    ephases = numpy.concatenate((ephases1, ephases2))
-    jds = numpy.concatenate((jds1, jds2))
-    readouts = numpy.concatenate((readouts1, readouts2))
-    noise = numpy.concatenate((noise1, noise2))
-    tdet = numpy.concatenate((tdet1, tdet2))
-    pet = numpy.concatenate((pet1, pet2))
-    coadd = numpy.concatenate((coadd1, coadd2))
-
-    pphases = numpy.empty(ephases.size) # dummy polar phases..
-    return ephases.size, pphases, pet, coadd, readouts, noise, ephases
-
-def extract_long_dark_states(orbit):
-    stateid_05 = get_darkstateid(0.5, orbit)
-    stateid_10 = get_darkstateid(1.0, orbit)
-    return extract_two_dark_states(orbit, stateid_05, stateid_10)
-
-def extract_short_dark_states(orbit):
-    stateid_1_16 = get_darkstateid(0.0625, orbit)
-    stateid_1_8 = get_darkstateid(0.125, orbit)
-    return extract_two_dark_states(orbit, stateid_1_16, stateid_1_8)
-
-def extract_dark_states(orbit, shortFlag=False, longFlag=True):
-    #print(shortFlag, longFlag)
-    if shortFlag:
-        n_exec_s, all_state_phases_s, pet_s, coadd_s, all_readouts_s, all_sigmas_s, ephases_s = extract_short_dark_states(orbit)
-    if longFlag:
-        n_exec_l, all_state_phases_l, pet_l, coadd_l, all_readouts_l, all_sigmas_l, ephases_l = extract_long_dark_states(orbit)
-
-    if shortFlag and longFlag:
-        n_exec = n_exec_s+n_exec_l
-        all_state_phases = numpy.concatenate((all_state_phases_s, all_state_phases_l))
-        pet = numpy.concatenate((pet_s, pet_l))
-        coadd = numpy.concatenate((coadd_s, coadd_l))
-        all_readouts = numpy.concatenate((all_readouts_s, all_readouts_l))
-        all_sigmas = numpy.concatenate((all_sigmas_s, all_sigmas_l))
-        ephases = numpy.concatenate((ephases_s, ephases_l))
-    elif shortFlag and not longFlag:
-        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = n_exec_s, all_state_phases_s, pet_s, coadd_s, all_readouts_s, all_sigmas_s, ephases_s
-    elif not shortFlag and longFlag:
-        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = n_exec_l, all_state_phases_l, pet_l, coadd_l, all_readouts_l, all_sigmas_l, ephases_l
-
-    return n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases
-
 # fit dark model to two neighbouring monthly calibration orbits
 #def fit_monthly(orbit, shortFlag=False, longFlag=True):
-def fit_monthly(orbit, verbose=False, **kwargs):
+def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
+    orbit_range = orbit-.5, orbit+2.5
+    if verbose:
+        print(orbit_range)
+
+    #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     #
     # fit it
@@ -180,7 +93,7 @@ def fit_monthly(orbit, verbose=False, **kwargs):
     phase1info = dict(fixed=False, limits=[-3.,+3.])
     phase2info = dict(fixed=False, limits=[-3.,+3.])
 #    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]
 
     # prepare initial parameters
     ao0 = 4000
@@ -346,74 +259,104 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, 
     return x, lcs, res_trends, all_readouts, all_sigmas
 
 def read_ch8_darks(orbit_range, stateid):
-    states = read_extracted_states(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
+    states = read_extracted_states_(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
     jds = state_mtbl['julianDay'][:]
     readouts = states['readoutMean']
     noise = states['readoutNoise']
     n_exec = readouts.shape[0]
     for idx_exec in range(n_exec):
-        readouts[idx_exec,:] = nlc.correct(readouts[idx_exec,:])
-    pet = numpy.zeros(n_exec1) + states['pet'][0]
-    coadd = numpy.zeros(n_exec1) + states['coadd'][0]
-    readouts_ = readouts[:,7*1024:8*1024] #/ coadd (was already done)
-    noise_ = noise[:,7*1024:8*1024] / numpy.sqrt(coadd)
+        readouts[idx_exec,:] = nlc.correct_ch8(readouts[idx_exec,:])
+    pet = numpy.zeros(n_exec) + states['pet'][0]
+    coadd = numpy.zeros(n_exec) + states['coadd'][0]
+    noise = noise / numpy.sqrt(coadd[0])
     phases = state_mtbl['orbitPhase'][:]
     tdet = state_mtbl['detectorTemp'][:]
     tdet = tdet[:,7].flatten() # ch8
-    return jds, readouts_, noise_, tdet, pet, coadd
+    return jds, readouts, noise, tdet, pet, coadd
 
 class AllDarks():
+
     def __init__(self, orbit_range, petlist):
         # first state
-        stateid = get_darkstateid(petlist[0], orbit)
-        jds, readouts, noise, tdet, pet1, coadd1 = read_ch8_darks(orbit_range, stateid)
+        stateid = get_darkstateid(petlist[0], orbit_range[0]) # TODO: this could be on the border of two state definitions
+        #print("PET=",petlist[0])
+        self.jds_, self.readouts_, self.noise_, self.tdet_, self.pet_, self.coadd_ = read_ch8_darks(orbit_range, stateid)
+        # add all other states and finalize
+        self.lump(orbit_range, petlist[1:])
+        self.finalize()
 
-        # concat other states
-        for i_pet in range(petlist[1:]):
-            stateid = get_darkstateid(petlist[i_pet], orbit)
+    def lump(self, orbit_range, petlist):
+        # concat all states
+        for petje in petlist:
+            #print("PET=",petje)
+            stateid = get_darkstateid(petje, orbit_range[0]) # TODO: this could be on the border of two state definitions
             jds_, readouts_, noise_, tdet_, pet_, coadd_ = read_ch8_darks(orbit_range, stateid)
-            numpy.concatenate((jds, jds_))
-            numpy.concatenate((readouts, readouts_))
-            numpy.concatenate((noise, noise_))
-            numpy.concatenate((tdet, tdet_))
-            numpy.concatenate((pet, pet_))
-            numpy.concatenate((coadd, coadd_))
+            #print(stateid, pet_)
+            self.jds_ = numpy.concatenate((self.jds_, jds_))
+            self.readouts_ = numpy.concatenate((self.readouts_, readouts_))
+            self.noise_ = numpy.concatenate((self.noise_, noise_))
+            self.tdet_ = numpy.concatenate((self.tdet_, tdet_))
+            self.pet_ = numpy.concatenate((self.pet_, pet_))
+            self.coadd_ = numpy.concatenate((self.coadd_, coadd_))
 
-        ephases, orbits = phaseconv.get_phase(jds, getOrbits=True)
+    # finalizes self.jds_, self.readouts_ .. etc to self.jds, self.readouts, etc
+    # eclipse phases are computed and sunrise is filtered out
+    def finalize(self):
+        ephases, orbits = phaseconv.get_phase(self.jds_, getOrbits=True)
         ephases += orbits
 
         ephases1 = numpy.mod(ephases, 1.)
         idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
-        self.jds = jds[idx_nosunrise]
+        self.jds = self.jds_[idx_nosunrise]
         self.ephases = ephases[idx_nosunrise]
-        self.readouts = readouts[idx_nosunrise,:]
-        self.noise = noise[idx_nosunrise,:]
-        self.tdet = tdet[idx_nosunrise]
-        self.pet = pet[idx_nosunrise]
-        self.coadd = coadd[idx_nosunrise]
+        self.readouts = self.readouts_[idx_nosunrise,:]
+        self.noise = self.noise_[idx_nosunrise,:]
+        self.tdet = self.tdet_[idx_nosunrise]
+        self.pet = self.pet_[idx_nosunrise]
+        self.coadd = self.coadd_[idx_nosunrise]
 
-    def get_range(orbit_range):
-        idx = (self.ephases >= orbit_range[0]) and (self.ephases <= orbit_range[1])
+    def get_range(self, orbit_range):
+        idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
         return numpy.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
 
 # compute thermal background trend between two normal orbits 
 # also computes actual thermal background offset (excluding trend or oscillation)
-def compute_trend(orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
+def compute_trend(alldarks, orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
+
+    orbit_range = orbit-.5, orbit+2.5
+    #print(orbit_range)
+
+    trends = numpy.empty(n_pix)
+    trends[:] = numpy.nan
+    lcs = numpy.empty(n_pix)
+    lcs[:] = numpy.nan
 
     #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range([orbit,orbit+1])
-    print(ephases)
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
+    print(n_exec)
+    if n_exec == 0:
+        #return numpy.zeros(n_pix), numpy.zeros(n_pix)
+        return trends, lcs
+
+    #print(ephases)
+    #print(pet)
     # divide by coadding factor, subtract analog offset and divide by exposure time to get thermal background in BU/s
     thermal_background = all_readouts
     #thermal_background /= numpy.matrix(coadd).T * numpy.ones(n_pix) # this was already done.. 
     thermal_background -= (numpy.matrix(aos).T * numpy.ones(n_exec)).T
     thermal_background /= numpy.matrix(pet).T * numpy.ones(n_pix)
 
-    trends = numpy.empty(n_pix)
-    trends[:] = numpy.nan
-    lcs = numpy.empty(n_pix)
-    lcs[:] = numpy.nan
+    abs_dist1 = numpy.abs(ephases - (trending_phase+orbit))
+    abs_dist2 = numpy.abs(ephases - (trending_phase+orbit+1))
+    idx1 = (numpy.argsort(abs_dist1))[0:6]
+    idx2 = (numpy.argsort(abs_dist2))[0:6]
+    #print(idx2)
+    phi1 = numpy.mean(ephases[idx1])
+    phi2 = numpy.mean(ephases[idx2])
+    #print(phi1,phi2)
+    idx0 = numpy.argmin(ephases)
+    phi0 = ephases[idx0]
 
     # loop over all channel pixels
     for pixnr in range(n_pix):
@@ -425,30 +368,10 @@ def compute_trend(orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
         if numpy.isnan(numpy.sum(background)):
             continue 
 
-        #ephases1 = ephases[numpy.where(numpy.int32(ephases) == orbit)]
-        #ephases2 = ephases[numpy.where(numpy.int32(ephases) >= orbit)]
-        abs_dist1 = numpy.abs(ephases - trending_phase - orbit)
-        abs_dist2 = numpy.abs(ephases - trending_phase - (orbit+1))
-        idx1 = (numpy.argsort(abs_dist1))[0:6]
-        idx2 = (numpy.argsort(abs_dist2))[0:6]
-        print(idx2)
-
         avg1 = numpy.mean(background[idx1])
         avg2 = numpy.mean(background[idx2])
-        phi1 = numpy.mean(ephases[idx1])
-        phi2 = numpy.mean(ephases[idx2])
-        #print(phi1,phi2)
-        idx0 = numpy.argmin(ephases)
-        phi0 = ephases[idx0]
         trends[pixnr] = (avg2-avg1)/(phi2-phi1)
-
-        # lc at phi=.12 (more or less)
-        #lcs[pixnr] = avg1 - trends[pixnr]*phi1 - amps[pixnr]*( cos(2*pi*(phi1+phaseshift)) + amp2*cos(4*pi*(phi1+phaseshift2)) )
-
-        # lc at intercept
-#        lcs[pixnr] = avg1 - trends[pixnr]*trending_phase - amps[pixnr]*( cos(2*pi*(+trending_phase+phaseshift)) + amp2*cos(4*pi*(+trending_phase+phaseshift2)) )
-        lcs[pixnr] = avg1 - trends[pixnr]*trending_phase - amps[pixnr]*( cos(2*pi*(+0+phaseshift)) + amp2*cos(4*pi*(+0+phaseshift2)) )
-#        lcs[pixnr] = avg1 - trends[pixnr]*0 - amps[pixnr]*( cos(2*pi*(0+phaseshift)) + amp2*cos(4*pi*(0+phaseshift2)) )
+        lcs[pixnr] = avg1 - trends[pixnr]*0 - amps[pixnr]*( cos(2*pi*(0+phaseshift)) + amp2*cos(4*pi*(0+phaseshift2)) )
 
     return trends, lcs
 
@@ -471,10 +394,12 @@ class VarDark:
 
 class VarDarkDb:
     def __init__( self, args=None, db_name='./sdmf_vardark.h5',
-                  truncate=False, calibration=None, verbose=False ):
+                  truncate=False, calibration=None, verbose=False, allDarks=None ):
         self.monthly_orbit = -1
         self.created = False
         self.ofilt = orbitfilter()
+        # initialize a minimal version
+        self.alldarks = AllDarks([24000,24010], [0.5, 1.0])
 
         if args:
             self.db_name  = args.db_name
@@ -486,6 +411,7 @@ class VarDarkDb:
             self.calibration = calibration
             self.truncate = truncate
             self.verbose  = verbose
+        return
 
     def checkDataBase(self):
         with h5py.File( self.db_name, 'r' ) as fid:
@@ -642,7 +568,7 @@ class VarDarkDb:
         monthly_orbit = self.ofilt.get_closest_monthly(orbit)
         if self.monthly_orbit != monthly_orbit:
             # calculate if monthly if not buffered
-            channel_phase, channel_phase2, aos, lcs, amps, amp2, trends = fit_monthly(monthly_orbit, **kwargs)
+            channel_phase, channel_phase2, aos, lcs, amps, amp2, trends = fit_monthly(self.alldarks, monthly_orbit, **kwargs)
             self.monthly_orbit = monthly_orbit
             self.aos = aos
             self.lcs = lcs

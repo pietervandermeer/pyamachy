@@ -128,6 +128,16 @@ class NonlinCorrector:
             spectrum[i_chan*1024:(i_chan+1)*1024] -= self.nlintbl[tabidx,spec]
         return spectrum
 
+    def correct_ch8(self, spectrum):
+        tabidx = self.curveIndex[7,:]
+        #print "tabidx.shape=", tabidx.shape
+        #print tabidx
+        spec = spectrum.round().astype(int)
+        spec = numpy.clip(spec,0,65535)
+        #print spec,spec.shape
+        spectrum -= self.nlintbl[tabidx,spec]
+        return spectrum
+
     # load configuration from file
     def get_config(self, config_file):
         parser=ConfigParser.SafeConfigParser()
@@ -228,12 +238,39 @@ class orbitfilter:
     def get_closest_monthly(self, orbit):
         delta = numpy.abs(self.monthlies - orbit)
         idx = numpy.argmin(delta)
-        #print(self.monthlies.shape)
-        #print(idx.shape, numpy.isscalar(idx), idx)
         if numpy.isscalar(idx):
             return self.monthlies[idx]
         else:
             return self.monthlies[idx[0]]
+
+    # return closest monthly calibration orbit
+    def get_previous_monthly(self, orbit):
+        delta = self.monthlies - (orbit-1) # 2 orbits after eachother, so skip one.
+        idx = numpy.where(delta < 0)
+        if numpy.isscalar(idx):
+            return self.monthlies[idx]
+        elif idx[0].size == 0:
+            # no earlier monthly found, return given orbit
+            return orbit
+        else:
+            # return last monthly before given orbit
+            return self.monthlies[idx[0][-1]]
+
+    # return closest monthly calibration orbit
+    def get_next_monthly(self, orbit):
+        delta = self.monthlies - (orbit+1) # 2 orbits after eachother, so skip one. 
+        idx = numpy.where(delta > 0)
+        if numpy.isscalar(idx):
+            print("scal")
+            return self.monthlies[idx]
+        elif idx[0].size == 0:
+            print("00000")
+            # no later monthly found, return given orbit
+            return orbit
+        else:
+            print("tuple:",self.monthlies[idx[0]])
+            # return first monthly after given orbit
+            return self.monthlies[idx[0][0]]
 
 class OrbitRangeError(Exception):
     def __init__(self, value):
@@ -388,6 +425,97 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     dict['status'] = 0
     return(dict)
 
+# reads extracted state executions from database (CH8 only)
+def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
+
+    if in_orbitlist is None:
+        if len(orbitrange) is not 2:
+            print('read_extracted_states: orbitrange should have 2 elements')
+            return
+
+    dict = {}
+
+    #
+    # obtain indices to entries of the requested orbit and state
+    #
+
+    fid = h5py.File(calib_db, 'r') # generates an exception
+    gid = fid["State_"+str('%02d'%state_id)] # generates an exception
+    mt_did = gid['metaTable']
+    orbitlist = (gid['orbitList'])[:]
+    if in_orbitlist is not None:
+        #metaindx = orbitlist = in_orbitlist
+        metaindx = numpy.in1d(orbitlist, in_orbitlist)
+    else:
+        #print('orbitrange=', orbitrange)
+        metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
+        #print(metaindx)
+
+    if metaindx[0].size is 0:
+        print('read_extracted_states: orbit range not present in database')
+        dict['status'] = -1
+        return dict
+
+    mtbl = mt_did[metaindx]
+    dict['mtbl'] = mtbl
+
+    if readoutMean:
+        ds_did      = gid['readoutMean']
+        dict['readoutMean'] = ds_did[metaindx,7*1024:]
+
+    # export error-in-the-mean instead of plain stddev.
+    if readoutNoise:
+        ds_did       = gid['readoutNoise']
+        readoutNoise = ds_did[metaindx,7*1024:]
+        ds_did       = gid['readoutCount']
+        readoutNoise /= numpy.sqrt(ds_did[metaindx,7*1024:])
+        readoutNoise *= 1.4826 # sigma = MAD * K 
+        dict['readoutNoise'] = readoutNoise
+
+    if orbitList:
+        ds_did = gid['orbitList']
+        dict['orbitList'] = ds_did[metaindx]
+
+    #
+    # find the pet and coadd (TODO: do for multiple orbits)
+    #
+
+    orbit = orbitrange[0]
+    clusoff1 = [0,10,1014,1024]
+    ds_did = gid['clusConf']
+    clusconf = ds_did[:]
+    orbit_start = clusconf['orbit'][:]
+    cluspets = clusconf['pet'][:]
+    cluscoad = clusconf['coaddf'][:]
+    n_defchange = orbit_start.size 
+    pet = numpy.empty(1024)
+    coadd = numpy.empty(1024)
+    print("CLUSPETS=", cluspets.shape, cluspets)
+    if n_defchange is 1:
+        orbit_end = [100000]
+    if n_defchange > 1:
+        orbit_end = numpy.append(orbit_start[1:], 100000)
+    if n_defchange is 0:
+        print("oh noes!")
+        return(dict)
+    for i_change in range(n_defchange):
+        if orbit_start[i_change] > orbit or orbit_end[i_change] < orbit:
+            continue
+        cluspets_ = cluspets[i_change,:]
+        cluscoad_ = cluscoad[i_change,:]
+        for i_clus in range(3): #ch8 is last 3 clusters.. always 40 clusters
+            clus_start = clusoff1[i_clus]
+            clus_end   = clusoff1[i_clus+1]
+            print(cluspets_.shape, cluspets_, orbit)
+            pet[clus_start:clus_end] = cluspets_[i_clus+37]
+            coadd[clus_start:clus_end] = cluscoad_[i_clus+37]
+    dict['pet'] = pet - petcorr
+    dict['coadd'] = coadd
+
+    fid.close()
+    dict['status'] = 0
+    return(dict)
+
 # test function. not a unit test.. yet
 if __name__ == '__main__':
     print("\norbit filter test")
@@ -398,6 +526,8 @@ if __name__ == '__main__':
     ra2 = ra[mo_mask]
     ra3 = ra[qu_mask]
     print(ra2.shape, ra3.shape)
+    print(filt.get_next_monthly(24000))
+    print(filt.get_next_monthly(24044))
 
     print("\nmemory correction test")
     mc = MemCorrector()
