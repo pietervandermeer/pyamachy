@@ -80,7 +80,6 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
 
     x = ephases-orbit, pet #, coadd
     if verbose:
-        print(all_state_phases.shape)
         print(pet.shape)
         print(pet)
         print(coadd)
@@ -132,13 +131,17 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
-        #else:
-        #   print("Optimal parameters: ", fitobj.params)
 
-    channel_phase1 = numpy.median(res_phases[numpy.where(statuses >= 0) and numpy.where(res_phases != -3)] % 1)
-    channel_phase2 = numpy.median(res_phases2[numpy.where(statuses >= 0) and numpy.where(res_phases2 != -3)] % 1)
+    # center the negative phase shift
+    idx_neg = res_phases > 0.5
+    res_phases[idx_neg] -= 0.5
+    idx_neg = res_phases2 > 0.5
+    res_phases2[idx_neg] -= 0.5
+    # compute channel phase shift
+    channel_phase1 = numpy.median(res_phases[numpy.where(statuses > 0)] ) % 1
+    channel_phase2 = numpy.median(res_phases2[numpy.where(statuses > 0)] ) % 1
     if verbose:
-        print('channel median phase =', channel_phase)
+        print('channel median phase =', channel_phase1, channel_phase2)
     phase1info = dict(fixed=True, limits=[-3.,+3.])
     phase2info = dict(fixed=True, limits=[-3.,+3.])
     #parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info]
@@ -182,7 +185,7 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
            print('Error message = ', fitobj.message)
            quit()
 
-    channel_amp2 = numpy.median(amps2[numpy.where(statuses >= 0)])
+    channel_amp2 = numpy.median(amps2[numpy.where(statuses > 0)])
 
     # TODO: initial outlier removal pass?
 
@@ -277,18 +280,20 @@ def read_ch8_darks(orbit_range, stateid):
 
 class AllDarks():
 
-    def __init__(self, orbit_range, petlist):
-        # first state
-        stateid = get_darkstateid(petlist[0], orbit_range[0]) # TODO: this could be on the border of two state definitions
-        #print("PET=",petlist[0])
-        self.jds_, self.readouts_, self.noise_, self.tdet_, self.pet_, self.coadd_ = read_ch8_darks(orbit_range, stateid)
-        # add all other states and finalize
-        self.lump(orbit_range, petlist[1:])
-        self.finalize()
+    def __init__(self, petlist):
+        self.petlist = petlist
+        self.jds_ = numpy.array([])
+        self.jds_ = numpy.array([])
+        self.readouts_ = numpy.empty([0, n_pix])
+        self.noise_ = numpy.empty([0, n_pix])
+        self.tdet_ = numpy.array([])
+        self.pet_ = numpy.array([])
+        self.coadd_ = numpy.array([])
+        self.ephases = numpy.array([])
 
-    def lump(self, orbit_range, petlist):
+    def lump(self, orbit_range):
         # concat all states
-        for petje in petlist:
+        for petje in self.petlist:
             #print("PET=",petje)
             stateid = get_darkstateid(petje, orbit_range[0]) # TODO: this could be on the border of two state definitions
             jds_, readouts_, noise_, tdet_, pet_, coadd_ = read_ch8_darks(orbit_range, stateid)
@@ -300,12 +305,24 @@ class AllDarks():
             self.pet_ = numpy.concatenate((self.pet_, pet_))
             self.coadd_ = numpy.concatenate((self.coadd_, coadd_))
 
+        return
+
     # finalizes self.jds_, self.readouts_ .. etc to self.jds, self.readouts, etc
     # eclipse phases are computed and sunrise is filtered out
     def finalize(self):
+        # deduplicate after having lumped
+        self.jds_, idx = numpy.unique(self.jds_, return_index=True)
+        self.readouts_ = self.readouts_[idx,:]
+        self.noise_ = self.noise_[idx,:]
+        self.tdet_ = self.tdet_[idx]
+        self.pet_ = self.pet_[idx]
+        self.coadd_ = self.coadd_[idx]
+
+        # get eclipse phases + orbits
         ephases, orbits = phaseconv.get_phase(self.jds_, getOrbits=True)
         ephases += orbits
 
+        # filter out sunrise-affected data
         ephases1 = numpy.mod(ephases, 1.)
         idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
         self.jds = self.jds_[idx_nosunrise]
@@ -316,7 +333,20 @@ class AllDarks():
         self.pet = self.pet_[idx_nosunrise]
         self.coadd = self.coadd_[idx_nosunrise]
 
+        return
+
     def get_range(self, orbit_range):
+        #idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
+        # autolump.. don't know if this is a good plan. maybe explicit is better 
+        #if numpy.sum(idx) == 0:
+        if (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0])):
+            print("AUTOLUMP")
+            # extend range because orbit in sdmf_extract db may be slices incorrectly.
+            extrange = list(orbit_range)
+            extrange[0] -= 1
+            extrange[1] += 1
+            self.lump(extrange)
+            self.finalize()
         idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
         return numpy.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
 
@@ -357,6 +387,7 @@ def compute_trend(alldarks, orbit, aos, amps, amp2, phaseshift, phaseshift2, **k
     #print(phi1,phi2)
     idx0 = numpy.argmin(ephases)
     phi0 = ephases[idx0]
+    phi1_ = phi1 % 1
 
     # loop over all channel pixels
     for pixnr in range(n_pix):
@@ -371,7 +402,8 @@ def compute_trend(alldarks, orbit, aos, amps, amp2, phaseshift, phaseshift2, **k
         avg1 = numpy.mean(background[idx1])
         avg2 = numpy.mean(background[idx2])
         trends[pixnr] = (avg2-avg1)/(phi2-phi1)
-        lcs[pixnr] = avg1 - trends[pixnr]*0 - amps[pixnr]*( cos(2*pi*(0+phaseshift)) + amp2*cos(4*pi*(0+phaseshift2)) )
+        lcs[pixnr] = avg1 - trends[pixnr]*phi1_ - amps[pixnr]*( cos(2*pi*(phi1_+phaseshift)) + amp2*cos(4*pi*(phi1_+phaseshift2)) )
+#        lcs[pixnr] = avg1 - trends[pixnr]*phi1_ - amps[pixnr]*( cos(2*pi*(phi1_+phaseshift)) + amp2*cos(4*pi*(phi1_+phaseshift2)) )
 
     return trends, lcs
 

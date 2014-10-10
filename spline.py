@@ -3,6 +3,7 @@ from __future__ import print_function
 import numpy as np
 from sciamachy_module import orbitfilter
 from vardark_module import AllDarks, trending_phase, fit_monthly
+from scia_dark_functions import scia_dark_fun2n
 from scipy.interpolate import interp1d
 
 ofilt = orbitfilter()
@@ -57,7 +58,7 @@ for orbit in range(int(xmin), int(xmax)):
     local_y = y[idx]
     print(local_phi)
     abs_dist1 = np.abs(local_phi - (trending_phase+orbit))
-    idx1 = (np.argsort(abs_dist1))[0:3]
+    idx1 = (np.argsort(abs_dist1))[0:6]
     phi1 = np.mean(local_phi[idx1])
     avg1 = np.mean(local_y[idx1])
     print(phi1, avg1)
@@ -68,15 +69,19 @@ for orbit in range(int(xmin), int(xmax)):
 f = interp1d(trending_phis, trending_ys)
 f2 = interp1d(trending_phis, trending_ys, kind='cubic')
 
-ximin = int(xmin)+1
-ximax = int(xmax)-1
+ximin = int(xmin)+.9
+ximax = int(xmax)-.9
 xnew = np.linspace(ximin, ximax, (ximax-ximin)*100.)
 #for x_ in x:
 #    print(x_)
 #for x_ in xnew:
 #    print(x_)
 import matplotlib.pyplot as plt
-plt.plot(x,y,'-', trending_phis, trending_ys, 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--')
+p = aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
+xt = np.array([trending_phase])
+wave = scia_dark_fun2n(p, xnew) + f2(xnew) - scia_dark_fun2n(p, xt)
+plt.plot(x,y,'v', trending_phis, trending_ys, 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--', xnew, wave,'-')
 #plt.plot(trending_phis, trending_ys, 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--')
-plt.legend(['orig data', 'avg data', 'linear', 'cubic'], loc='best')
+plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct'], loc='best')
 plt.show()
+

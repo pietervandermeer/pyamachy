@@ -261,14 +261,14 @@ class orbitfilter:
         delta = self.monthlies - (orbit+1) # 2 orbits after eachother, so skip one. 
         idx = numpy.where(delta > 0)
         if numpy.isscalar(idx):
-            print("scal")
+            #print("scal")
             return self.monthlies[idx]
         elif idx[0].size == 0:
-            print("00000")
+            #print("00000")
             # no later monthly found, return given orbit
             return orbit
         else:
-            print("tuple:",self.monthlies[idx[0]])
+            #print("tuple:",self.monthlies[idx[0]])
             # return first monthly after given orbit
             return self.monthlies[idx[0][0]]
 
@@ -490,7 +490,7 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
     n_defchange = orbit_start.size 
     pet = numpy.empty(1024)
     coadd = numpy.empty(1024)
-    print("CLUSPETS=", cluspets.shape, cluspets)
+    #print("CLUSPETS=", cluspets.shape, cluspets)
     if n_defchange is 1:
         orbit_end = [100000]
     if n_defchange > 1:
@@ -506,7 +506,7 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
         for i_clus in range(3): #ch8 is last 3 clusters.. always 40 clusters
             clus_start = clusoff1[i_clus]
             clus_end   = clusoff1[i_clus+1]
-            print(cluspets_.shape, cluspets_, orbit)
+            #print(cluspets_.shape, cluspets_, orbit)
             pet[clus_start:clus_end] = cluspets_[i_clus+37]
             coadd[clus_start:clus_end] = cluscoad_[i_clus+37]
     dict['pet'] = pet - petcorr

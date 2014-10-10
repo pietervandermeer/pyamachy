@@ -79,7 +79,7 @@ class MVarDarkPlotter():
         # parameters used especially for the GUI
         parser.add_argument('-l', '--legend', action='store_true', 
                             dest='legend', help='displays legend')
-        parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=24038)
+        parser.add_argument('-O', '--orbit', dest='orbit', type=int, help='sets orbit number', default=35466)
         parser.add_argument('-P', '--pixnr', dest='pixnr', type=int, help='sets pixel number', default=597)
         self.args = parser.parse_args()
         self.residual_mode = False
@@ -120,6 +120,14 @@ class MVarDarkPlotter():
 
         self.nlc = NonlinCorrector()
         self.ofilt = orbitfilter()
+
+        #
+        # load initial orbit window
+        #
+
+        orbit_range = [self.args.orbit, self.args.orbit+self.orb_window]
+        alldarks.lump(orbit_range)
+        alldarks.finalize()
 
         #
         # initialize GUI kdb state
@@ -190,6 +198,8 @@ class MVarDarkPlotter():
         pixnr = self.args.pixnr
 
         if self.old_monthly != self.monthly_orbit:
+            new_monthly_range = [self.monthly_orbit-self.orb_window/2, self.monthly_orbit+self.orb_window/2]
+            alldarks.get_range(new_monthly_range) # autolump new range into buffers
             (lst) = fit_monthly(alldarks, self.monthly_orbit, shortFlag=use_short_states, longFlag=use_long_states, verbose=self.args.verbose)
             channel_phase, channel_phase2, aos, lcs_fit, amps, channel_amp2, trends_fit = lst
             self.aos = aos
@@ -224,12 +234,6 @@ class MVarDarkPlotter():
         self.sigmas_list = list()
         self.phases_list = list()
         self.rd_pets = list()
-        # if use_long_states:
-        #     s1 = get_darkstateid(1.0, normal_orbit)
-        #     s2 = get_darkstateid(0.5, normal_orbit)
-        # elif use_short_states:
-        #     s1 = get_darkstateid(0.125, normal_orbit)
-        #     s2 = get_darkstateid(0.0625, normal_orbit)
         for i_orb in range(self.orb_window):
             #print("window orbit", i_orb)
             orb = normal_orbit+i_orb
@@ -328,10 +332,10 @@ class MVarDarkPlotter():
                     lc = (self.lcs_lin[i_orb])[pixnr]
                     trend = (self.trends_lin[i_orb])[pixnr]
                     plin = self.aos[pixnr], lc, self.amps[pixnr], trend, self.channel_phase, self.channel_amp2, self.channel_phase2
-                    ph = orbphase+float(i_orb) #- trending_phase
-                    x_model = orbphase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
+                    ph = orbphase+float(i_orb)  + trending_phase
+                    x_model = orbphase+ trending_phase, numpy.zeros(total_pts)+pets[i_pet] #, coadd
 
-                    x_plot = ph + self.args.orbit
+                    x_plot = ph + self.args.orbit  
                     fig.plot(x_plot, scia_dark_fun2(plin, x_model), c=cols[i_pet], linewidth=2.0, label="lin orbvar "+str(pets[i_pet])) #marker='+', 
                     #fig.plot(ph, scia_dark_fun2(pfit, x_model), c=cols[i_pet], label="fit orbvar "+str(pets[i_pet]))
 
@@ -406,13 +410,16 @@ class MVarDarkPlotter():
 
 #- main ------------------------------------------------------------------------
 
-print("import darks state def 1")
-#alldarks = AllDarks([5750,43362], [1.0, 0.5])
-#alldarks = AllDarks([5750,43362], [1.0, 0.5])
-alldarks = AllDarks([23000,25000], [1.0, 0.5])
+# initialize without any dark data, just specify PET list
+alldarks = AllDarks([1.0, 0.5])
+
+#print("import darks state def 1")
+#alldarks = AllDarks([5750,43362])
+#alldarks = AllDarks([5750,43362])
+#alldarks = AllDarks([23000,25000])
 #print("import darks state def 2")
-#alldarks.lump([43362,53200], [1.0, 0.5])
-#alldarks.lump([43362,43400], [1.0, 0.5])
+#alldarks.lump([43362,53200])
+#alldarks.lump([43362,43400])
 #print("finalize")
 #alldarks.finalize()
 
