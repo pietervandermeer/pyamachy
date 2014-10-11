@@ -199,15 +199,17 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
 
 # fit dark model to an orbits with normal (eclipse) dark states
 # use parameters computed from nearest calibration orbits
-def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, **kwargs):
+def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, verbose=False, **kwargs):
 
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
+    orbit_range = orbit, orbit+2
+    #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
+    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     #
     # fit it
     #
 
-    x = ephases-orbit, pet, coadd
+    x = ephases-orbit, pet #, coadd
     #print(all_state_phases.shape)
     #print(pet.shape)
     #print(pet)
@@ -218,22 +220,22 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, 
     lcinfo = dict(fixed=False, limits=[-100000.,+100000.])
     amp1info = dict(fixed=True, limits=[-1000,+1000])
     trendinfo = dict(fixed=False, limits=[-1000,+1000])
-    amp2info = dict(fixed=False, limits=[-1.,+1.])
+    amp2info = dict(fixed=True, limits=[-1.,+1.])
     phase1info = dict(fixed=True, limits=[-3.,+3.])
-    phase2info = dict(fixed=False, limits=[-3.,+3.])
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
+    phase2info = dict(fixed=True, limits=[-3.,+3.])
+    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
 
     # ..and fit
     n_done = 0
     statuses = numpy.zeros(n_pix)
-    res_phases = numpy.empty(n_pix)
     res_trends = numpy.empty(n_pix)
-    res_phases[:] = numpy.nan
+    res_lcs = numpy.empty(n_pix)
     res_trends[:] = numpy.nan
+    res_lcs[:] = numpy.nan
     for pixnr in range(n_pix):
         #print(pixnr)
         # prepare initial parameters
-        p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift]) 
+        p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
@@ -241,7 +243,7 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, 
         #print('sigmas = ', pix_sigmas)
         #print(numpy.sum(pix_sigmas))
         if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)):
-            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
             continue
@@ -249,17 +251,15 @@ def fit_eclipse_orbit(orbit, aos, lcs, amps, channel_phaseshift, verbose=False, 
         if verbose:
             print(pixnr, fitobj.message)
         statuses[pixnr] = fitobj.status
+        res_lcs[pixnr] = fitobj.params[1]
         res_trends[pixnr] = fitobj.params[3]
-        res_phases[pixnr] = fitobj.params[4]
         if (fitobj.status <= 0):
            #print('Error message = ', fitobj.message)
            quit()
         #else:
         #   print("Optimal parameters: ", fitobj.params)
 
-    print("done")
-
-    return x, lcs, res_trends, all_readouts, all_sigmas
+    return x, res_lcs, res_trends, all_readouts, all_sigmas
 
 def read_ch8_darks(orbit_range, stateid):
     states = read_extracted_states_(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
@@ -339,7 +339,7 @@ class AllDarks():
         #idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
         # autolump.. don't know if this is a good plan. maybe explicit is better 
         #if numpy.sum(idx) == 0:
-        if (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0])):
+        if (self.ephases.size == 0) or (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0])):
             print("AUTOLUMP")
             # extend range because orbit in sdmf_extract db may be slices incorrectly.
             extrange = list(orbit_range)
