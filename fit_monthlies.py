@@ -10,8 +10,8 @@ from scipy.interpolate import interp1d
 n_pix = 1024
 pixnr = 597
 first_orbit = 5000
-last_orbit = 6000
-#last_orbit = 55000
+#last_orbit = 7000
+last_orbit = 55000
 ofilt = orbitfilter()
 ad = AllDarks([1.0, 0.5])
 

@@ -35,7 +35,7 @@ fun_amp2 = interp1d(monthlies, amp2_dset[:])
 for i_pix in range(n_pix):
     print(i_pix)
     fun_aos = interp1d(monthlies, aos_dset[:,i_pix])
-    fun_amps = interp1d(monthlies, lcs_dset[:,i_pix])
+    fun_amps = interp1d(monthlies, amps_dset[:,i_pix])
     iaos[:,i_pix] = fun_aos(orblist)
     iamps[:,i_pix] = fun_amps(orblist)
 
