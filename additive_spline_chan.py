@@ -14,9 +14,9 @@ from scipy.interpolate import interp1d
 fname = "vardark_long.h5"
 n_pix = 1024
 pts_per_orbit = 50
-pixnr = 597 # test pixel
+pixnr = 621 # test pixel
 # make a graph of pixel "pixnr" instead of computing all pixels
-makePiccy = False
+makePiccy = True
 # use fitting procedure for every orbit y/n. if no, just find a good trending point by averaging local darks (much faster).
 useTrendFit = False
 ad = AllDarks([1.0, 0.5])
@@ -48,15 +48,21 @@ def saveWave(orbit, phi, wave_seg):
 
 # open interpolated monthlies
 fin = h5py.File("interpolated_monthlies.h5", "r")
-orblist = fin["orbits"]
-last_orbit = np.max(orblist)
-first_orbit = np.min(orblist)
+in_orblist = fin["orbits"]
+last_orbit = np.max(in_orblist)
+first_orbit = np.min(in_orblist)
 #orbit_range = [first_orbit, last_orbit]
-orbit_range = [first_orbit, 6000] # debog
+orbit_range = [50000, 55000] # debog
 inter_aos = fin["aos"]
 inter_amps = fin["amps"]
 inter_phases = fin["phases"]
 inter_amp2 = fin["amp2"]
+
+# plot phaseshift vs orbit over the entire mission
+import matplotlib.pyplot as plt
+plt.ticklabel_format(useOffset=False)
+plt.plot(in_orblist[:],inter_phases[:,0])
+plt.show()
 
 # get the raw darks
 print("get darks..")
@@ -71,7 +77,6 @@ pets = pets[idx]
 coadds = coadds[idx]
 readouts = readouts[idx,:]
 noise = noise[idx,:]
-plot_x = ephases
 xmin = np.min(ephases)
 xmax = np.max(ephases)
 print("done.")
@@ -97,7 +102,7 @@ thermal_background = readouts
 i_orbit = 0
 m = 0
 eorbits = ephases.astype(np.int32)
-for orbit in orblist[:]:
+for orbit in in_orblist[:]:
     aos = inter_aos[i_orbit,:] 
     n = np.sum(eorbits == orbit)
     if n > 0:
@@ -105,12 +110,11 @@ for orbit in orblist[:]:
     i_orbit += 1
     m += n
 thermal_background /= np.matrix(pets).T * np.ones(n_pix)
-plot_y = thermal_background[:,pixnr]
 print("done.")
 
-n_tpts = int(xmax) - int(xmin)
-trending_phis = np.empty(n_tpts)
-trending_ys = np.empty([n_tpts, n_pix])
+if makePiccy:
+    plot_x = ephases
+    plot_y = thermal_background[:,pixnr]
 
 # determine trending point for each orbit (including the extended borders)
 print("compute trending points..")
@@ -120,6 +124,10 @@ avg_phi = 0.
 xt = np.array([trending_phase]) # trending_phase
 lcs = np.ones(n_pix) * 5000 # initial guess for thermal background signal. 5000 BU/s is a good average
 orbrange = range(int(np.min(ephases)), int(np.max(ephases)))
+n_tpts = len(orbrange)
+trending_phis = np.empty(n_tpts)
+trending_ys = np.empty([n_tpts, n_pix])
+
 for orbit in orbrange:
     #print(orbit)
     if useTrendFit:
@@ -209,8 +217,9 @@ else:
 #print(range(int(ximin), int(ximax)))
 for orbit in range(int(ximin), int(ximax)):
     out_orblist = np.append(out_orblist, orbit)
-    i_orbit = (np.where(orblist[:] == orbit))[0][0]
-    print(i_orbit, orblist[0], orbit)
+    print(orbit, in_orblist[:])
+    i_orbit = (np.where(in_orblist[:] == orbit))[0][0]
+    print(i_orbit, in_orblist[0], orbit)
     aos = inter_aos[i_orbit,:]
     amps = inter_amps[i_orbit,:]
     channel_phase1 = inter_phases[i_orbit,0]
@@ -239,6 +248,8 @@ if makePiccy:
     # single pixel
     import matplotlib.pyplot as plt
     plt.ticklabel_format(useOffset=False)
+    print(plot_x.shape, plot_y.shape)
+    print(trending_phis.shape, trending_ys.shape)
     plt.plot(plot_x,plot_y,'v', trending_phis, trending_ys[:,pixnr], 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--', xnew, full_wave,'-')
     #plt.plot(trending_phis, trending_ys, 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--')
     plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct'], loc='best')
