@@ -26,6 +26,8 @@ import time
 from datetime import date
 import ctypes as ct
 
+last_orbit = 53200
+
 # returns MJD dates (starting 1-1-1) for given ENVISAT absolute orbit numbers
 def convert_orbit_to_jd(orbit_list, pole_phase=None):
     orbit_change = 45222 # OrbitChangeNumber
