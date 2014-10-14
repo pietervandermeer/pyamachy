@@ -335,11 +335,10 @@ class AllDarks():
 
         return
 
-    def get_range(self, orbit_range):
-        #idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
-        # autolump.. don't know if this is a good plan. maybe explicit is better 
-        #if numpy.sum(idx) == 0:
-        if (self.ephases.size == 0) or (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0])):
+    def get_range(self, orbit_range, autoLump=True):
+        # this is not a perfect range check.. we need to keep track of stand-alone ranges, since ephases can differ from lump() orbit ranges 
+        notInRange = (self.ephases.size == 0) or (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0]))
+        if autoLump and notInRange:
             print("AUTOLUMP")
             # extend range because orbit in sdmf_extract db may be slices incorrectly.
             extrange = list(orbit_range)

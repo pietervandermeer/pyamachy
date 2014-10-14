@@ -4,6 +4,9 @@ import numpy as np
 import h5py
 #from sciamachy_module import orbitfilter
 import envisat
+import argparse
+from argparse import ArgumentParser, ArgumentTypeError
+import re
 from vardark_module import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 from scipy.interpolate import interp1d
@@ -14,14 +17,28 @@ from scipy.interpolate import interp1d
 fname = "vardark_long.h5"
 n_pix = 1024
 pts_per_orbit = 50
-pixnr = 621 # test pixel
-# make a graph of pixel "pixnr" instead of computing all pixels
-makePiccy = True
-# use fitting procedure for every orbit y/n. if no, just find a good trending point by averaging local darks (much faster).
-useTrendFit = False
-ad = AllDarks([1.0, 0.5])
 
 #-- functions ------------------------------------------------------------------
+
+def parseOrbitList(str):
+    msg1 = "'" + str + "' is not a range or number." \
+        + " Expected forms like '20000-25000' or '20000'."
+    msg2 = "'" + str + "' is not valid orbit number."
+
+    if str.lower() == 'all':
+        return None
+
+    m = re.match(r'(\d+)(?:-(\d+))?$', str)
+    if not m:
+        raise ArgumentTypeError( msg1 )
+    v1 = int(m.group(1))
+    if m.group(2):
+        v2 = int(m.group(2))
+        if v1 < 1 or v2 > 100000:
+            raise ArgumentTypeError( msg2 )
+        return (v1, v2)
+    else:
+        return v1
 
 def saveWave(orbit, phi, wave_seg):
     idx = np.where(orbit_dset == orbit)
@@ -46,30 +63,109 @@ def saveWave(orbit, phi, wave_seg):
 
 #-- main -----------------------------------------------------------------------
 
+#
+# parse command line arguments
+#
+
+parser = argparse.ArgumentParser(description=
+         'Computes channel 8 thermal background signal in BU/s for specified orbit range. Uses interpolated_monthlies.h5.')
+parser.add_argument('-o', '--output', dest='output_fname', type=str)
+parser.add_argument('--config', dest='config_file', type=file, 
+                    default='default3.1.cfg')
+parser.add_argument('-v', '--verbose', dest='verbose', 
+                    action='store_true')
+parser.add_argument('-V', '--version', action='version', 
+                    version='%(prog)s 0.1')
+parser.add_argument('--plot', action='store_true')
+parser.add_argument('--orbitrange', default='43000-44000', 
+                    help='sets orbit range f.e. "43000-44000", "all"', type=parseOrbitList)
+# parameters used especially for the plot
+parser.add_argument('-s', '--short', action='store_true', 
+                    dest='shortMode', help="compute product for short PET's instead of long ones.")
+parser.add_argument('-p', '--pixnr', action='store', type=int, default=602,
+                    dest='pixnr', help="pixel number to be examined [0..1023]")
+parser.add_argument('-f', '--fittrend', action='store_true', default=False,
+                    dest='useFitTrend', help="least-squares fit instead of just getting average trending point.")
+args = parser.parse_args()
+
+#
+# handle command line arguments
+#
+
+pixnr = args.pixnr
+print("pixnr=", pixnr)
+
+if args.shortMode:
+    print("PETs [0.0625, 0.125]")
+    ad = AllDarks([0.0625, 0.125])
+else:
+    print("PETs [1.0, 0.5]")
+    ad = AllDarks([1.0, 0.5])
+
+if args.orbitrange is None:
+    # all
+    # first_orbit = 5000
+    # last_orbit = 55000
+    #debug
+    first_orbit = 42000
+    last_orbit = 43000
+else:
+    first_orbit = args.orbitrange[0]
+    last_orbit = args.orbitrange[1]
+print("orbit range =", first_orbit, last_orbit)
+
+# make a graph of pixel "pixnr" instead of computing all pixels
+makePiccy = args.plot
+print("makePiccy =", makePiccy)
+
+# use fitting procedure for every orbit y/n. if no, just find a good trending point by averaging local darks (much faster).
+useTrendFit = args.useFitTrend
+print("useTrendFit =", useTrendFit)
+
+#
 # open interpolated monthlies
+#
+
 fin = h5py.File("interpolated_monthlies.h5", "r")
 in_orblist = fin["orbits"]
-last_orbit = np.max(in_orblist)
-first_orbit = np.min(in_orblist)
-#orbit_range = [first_orbit, last_orbit]
-orbit_range = [50000, 55000] # debog
+if args.orbitrange is None:
+    last_orbit = np.max(in_orblist)
+    first_orbit = np.min(in_orblist)
+orbit_range = [first_orbit, last_orbit]
 inter_aos = fin["aos"]
 inter_amps = fin["amps"]
 inter_phases = fin["phases"]
 inter_amp2 = fin["amp2"]
 
 # plot phaseshift vs orbit over the entire mission
-import matplotlib.pyplot as plt
-plt.ticklabel_format(useOffset=False)
-plt.plot(in_orblist[:],inter_phases[:,0])
-plt.show()
+# import matplotlib.pyplot as plt
+# plt.ticklabel_format(useOffset=False)
+# plt.plot(in_orblist[:],inter_phases[:,0])
+# plt.show()
 
+#
 # get the raw darks
+#
+
 print("get darks..")
-n_darks, dummy, pets, coadds, readouts, noise, ephases = ad.get_range(orbit_range)
+if first_orbit < 43362 and last_orbit >= 43362:
+    print("lump upto 43361")
+    ad.lump([first_orbit, 43361])
+    print("lump from 43362")
+    ad.lump([43362, last_orbit])
+else:
+    print("lump")
+    ad.lump(orbit_range)
+print("finalize")
+ad.finalize()
+print("get data")
+n_darks, dummy, pets, coadds, readouts, noise, ephases = ad.get_range(orbit_range, autoLump=False)
 print("done.")
 
+#
 # sort darks
+#
+
 print("sort darks..")
 idx = np.argsort(ephases)
 ephases = ephases[idx]
@@ -96,7 +192,10 @@ readouts = np.concatenate((readouts[idxl,:], readouts, readouts[idxr,:]))
 noise = np.concatenate((noise[idxl,:], noise, noise[idxr,:]))
 print("done.")
 
+#
 # subtract interpolated analog offset to get thermal signal, and normalize by time
+#
+
 print("get thermal background signal..")
 thermal_background = readouts
 i_orbit = 0
@@ -116,7 +215,10 @@ if makePiccy:
     plot_x = ephases
     plot_y = thermal_background[:,pixnr]
 
+#
 # determine trending point for each orbit (including the extended borders)
+#
+
 print("compute trending points..")
 i_trend = 0
 i_orbit = 0
@@ -186,7 +288,10 @@ phi_t = avg_phi # trending_phase
 print("phi_t=",phi_t)
 #print(trending_ys[:,pixnr], trending_phis)
 
-# visualize a pixel of choice
+#
+# interpolate.. then visualize a pixel of choice or store data
+#
+
 xnewi = xnew.astype(np.int32)
 print("generating interpolators..")
 if makePiccy:
@@ -236,7 +341,7 @@ for orbit in range(int(ximin), int(ximax)):
             p = aos[i_pix], lcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
             wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt)
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ 
-        print(xnew_)
+        #print(xnew_)
         wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
         #print(wave.shape)
         saveWave(orbit, xnew_, wave)

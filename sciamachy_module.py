@@ -280,20 +280,7 @@ class OrbitRangeError(Exception):
 
 # for given pet and absolute orbit number, return the the right dark state id
 def get_darkstateid(pet, orbit):
-    if orbit >= 1572 and orbit < 4144:
-        if pet == 2:
-            return 67
-        elif pet == 1:
-            return 8 # ?
-        elif pet == 0.5:
-            return 63
-        elif pet == 0.125:
-            return 26 # ?
-        elif pet == 0.0625:
-            return 46
-        else:
-            raise PetNotFoundError("pet not present between orbits 1572 and 4144")
-    if orbit >= 4151 and orbit < 7268:
+    if orbit >= 1572 and orbit < 43362:
         if pet == 2:
             return 67
         elif pet == 1:
@@ -305,20 +292,7 @@ def get_darkstateid(pet, orbit):
         elif pet == 0.0625:
             return 46
         else:
-            raise PetNotFoundError("pet not present between orbits 4151 and 7268")
-    if orbit >= 7268 and orbit < 43362:
-        if pet == 2:
-            return 67
-        elif pet == 1:
-            return 8
-        elif pet == 0.5:
-            return 63
-        elif pet == 0.125:
-            return 26
-        elif pet == 0.0625:
-            return 46
-        else:
-            raise PetNotFoundError("pet not present between orbits 7268 and 43362")
+            raise PetNotFoundError("pet not present between orbits 1572 and 43362")
     elif orbit >= 43362 and orbit < 60000:
         if pet == 1:
             return 67
