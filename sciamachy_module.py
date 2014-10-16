@@ -400,7 +400,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     return(dict)
 
 # reads extracted state executions from database (CH8 only)
-def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
+def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False, readoutCount=False, errorInTheMean=True):
 
     if in_orbitlist is None:
         if len(orbitrange) is not 2:
@@ -437,12 +437,17 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
         ds_did      = gid['readoutMean']
         dict['readoutMean'] = ds_did[metaindx,7*1024:]
 
+    if readoutCount:
+        ds_did = gid['readoutCount']
+        dict['readoutCount'] = ds_did[metaindx,7*1024:]
+
     # export error-in-the-mean instead of plain stddev.
     if readoutNoise:
         ds_did       = gid['readoutNoise']
         readoutNoise = ds_did[metaindx,7*1024:]
-        ds_did       = gid['readoutCount']
-        readoutNoise /= numpy.sqrt(ds_did[metaindx,7*1024:])
+        if errorInTheMean:
+            ds_did       = gid['readoutCount']
+            readoutNoise /= numpy.sqrt(ds_did[metaindx,7*1024:])
         readoutNoise *= 1.4826 # sigma = MAD * K 
         dict['readoutNoise'] = readoutNoise
 

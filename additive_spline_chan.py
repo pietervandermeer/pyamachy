@@ -14,7 +14,9 @@ from scipy.interpolate import interp1d
 #-- globals --------------------------------------------------------------------
 
 #fname = "/SCIA/SDMF31/pieter/vardark_long.h5"
-fname = "vardark_long.h5"
+fname_long = "/array/slot0B/SDMF/3.1/pieter/vardark_long.h5"
+fname_short = "/array/slot0B/SDMF/3.1/pieter/vardark_short.h5"
+#fname = "vardark_long.h5"
 n_pix = 1024
 pts_per_orbit = 50
 
@@ -92,9 +94,6 @@ args = parser.parse_args()
 # handle command line arguments
 #
 
-pixnr = args.pixnr
-print("pixnr=", pixnr)
-
 if args.shortMode:
     print("PETs [0.0625, 0.125]")
     ad = AllDarks([0.0625, 0.125])
@@ -102,13 +101,23 @@ else:
     print("PETs [1.0, 0.5]")
     ad = AllDarks([1.0, 0.5])
 
+if args.output_fname:
+    fname = args.output_fname
+elif args.shortMode:
+    fname = fname_short
+else:
+    fname = fname_long
+print("output_fname=", fname)
+
+pixnr = args.pixnr
+print("pixnr=", pixnr)
+
+# get orbit range from interpolated monthlies input or from command line?
+fin = h5py.File("interpolated_monthlies.h5", "r")
+in_orblist = fin["orbits"]
 if args.orbitrange is None:
-    # all
-    # first_orbit = 5000
-    # last_orbit = 55000
-    #debug
-    first_orbit = 42000
-    last_orbit = 43000
+    last_orbit = np.max(in_orblist)
+    first_orbit = np.min(in_orblist)
 else:
     first_orbit = args.orbitrange[0]
     last_orbit = args.orbitrange[1]
@@ -126,11 +135,6 @@ print("useTrendFit =", useTrendFit)
 # open interpolated monthlies
 #
 
-fin = h5py.File("interpolated_monthlies.h5", "r")
-in_orblist = fin["orbits"]
-if args.orbitrange is None:
-    last_orbit = np.max(in_orblist)
-    first_orbit = np.min(in_orblist)
 orbit_range = [first_orbit, last_orbit]
 inter_aos = fin["aos"]
 inter_amps = fin["amps"]

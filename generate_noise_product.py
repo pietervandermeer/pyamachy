@@ -32,21 +32,24 @@ class Noise:
 			post_ocr43_sid = get_darkstateid(self.pet, 43362)
 			pre_range = [orbit_range[0], 43361]
 			post_range = [43362, orbit_range[1]]
-			d1 = read_extracted_states_(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True)
-			d2 = read_extracted_states_(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True)
+			d1 = read_extracted_states_(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+			d2 = read_extracted_states_(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+			c1 = d1['readoutCount'][:]
+			c2 = d2['readoutCount'][:]
+			self.count = np.concatenate((c1,c2))
 			j1 = d1['mtbl'][:]['julianDay']
 			j2 = d2['mtbl'][:]['julianDay']
 			self.mjds = np.concatenate((j1,j2))
-			ephases, self.orbits = self.pc.get_phase(self.mjds, getOrbits=True)
 			n1 = d1['readoutNoise'][:,:]
 			n2 = d2['readoutNoise'][:,:]
 			self.noise = np.concatenate((n1,n2))
 		else:
 			stateid = get_darkstateid(self.pet, orbit_range[0])
-			d = read_extracted_states_(orbit_range, stateid, self.calib_db, readoutNoise=True)
+			d = read_extracted_states_(orbit_range, stateid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+			self.count = d['readoutCount'][:]
 			self.mjds = d['mtbl'][:]['julianDay']
-			ephases, self.orbits = self.pc.get_phase(self.mjds, getOrbits=True)
 			self.noise = d['readoutNoise'][:,:]
+		ephases, self.orbits = self.pc.get_phase(self.mjds, getOrbits=True)
 
 	# averages noise figures so that they are per orbit
 	def finalize(self):
@@ -73,24 +76,29 @@ class Noise:
 		for i in range(n_orbits):
 			count = counts[i]
 			first = firsts[i]
-			sl = self.noise[first:first+count, :]
-			sl = np.sqrt(np.mean(np.square(sl), axis=0)) # RMS
-			noise_out[i,:] = sl
+			sdev = self.noise[first:first+count, :]  # stddev
+			count = np.sum(self.count[first:first+count, :], axis=0)  # total count of all measurements
+			noise_out[i,:] = np.sqrt(np.mean(np.square(sdev), axis=0) / count) # root(mean_square / count) -> error in the mean
 
 		self.noise = noise_out
 
+	def get_groupname(self):
+		return "pet"+str(self.pet)
+
 	def dump_hdf5(self, fname):
-		f = h5py.File(fname, "w")
-		n_dset = f.create_dataset("noise", self.noise.shape, dtype='f')
+		f = h5py.File(fname, "a")
+		grpn = self.get_groupname()
+		n_dset = f.create_dataset(grpn+"/noise", self.noise.shape, dtype='f')
 		n_dset[:,:] = self.noise
-		o_dset = f.create_dataset("orbits", self.orbits.shape, dtype='i')
+		o_dset = f.create_dataset(grpn+"/orbits", self.orbits.shape, dtype='i')
 		o_dset[:] = self.orbits
 		f.close()
 
 	def load_hdf5(self, fname):
 		f = h5py.File(fname, "r")
-		self.noise = f["noise"][:,:]
-		self.orbits = f["orbits"][:]
+		grpn = self.get_groupname()
+		self.noise = f[grpn+"/noise"][:,:]
+		self.orbits = f[grpn+"/orbits"][:]
 		f.close()
 
 #-- main -----------------------------------------------------------------------
@@ -122,12 +130,31 @@ def test_load_store():
 if __name__ == '__main__':
 	import timeit
 
+	orbit_range = [3300,53300]
+	db_fname = "noise.h5"
+
+	# NOTE: entire db will get truncated!
+	f = h5py.File(db_fname, "w")
+	f.close()
+
 	noise10 = Noise(1.0)
-	noise10.extract([43000,44000])
+	noise10.extract(orbit_range)
 	noise10.finalize()
+	noise10.dump_hdf5(db_fname)
 
 	pixnr=120
 	print(noise10.noise[:,pixnr])
+	print(np.min(noise10.noise[:,pixnr]), np.max(noise10.noise[:,pixnr]))
 	print(noise10.noise[:,pixnr].shape)
 
-	print(timeit.timeit("test_load_store()", setup="from __main__ import test_load_store", number=10))
+	noise05 = Noise(0.5)
+	noise05.extract(orbit_range)
+	noise05.finalize()
+	noise05.dump_hdf5(db_fname)
+
+	noise05 = Noise(0.125)
+	noise05.extract(orbit_range)
+	noise05.finalize()
+	noise05.dump_hdf5(db_fname)
+
+#	print(timeit.timeit("test_load_store()", setup="from __main__ import test_load_store", number=10))
