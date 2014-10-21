@@ -21,20 +21,108 @@
 
 /*+++++ Global Variables +++++*/
 extern FILE *fd_nadc;
+bool File_Is_Open = false;
 
 /*+++++ Static Variables +++++*/
 static const char err_msg[] = "invalid number of function arguments";
 
 /*+++++++++++++++++++++++++ Static Functions +++++++++++++++++++++++*/
-#include <../libSCIA/Inline/unpack_lv0_data.inc>
+static inline
+void UNPACK_LV0_PIXEL_VAL( const struct chan_src *pixel,
+                           /*@out@*/ unsigned int *data )
+{
+     register unsigned short np = 0;
+
+     register unsigned char *cpntr = pixel->data;
+
+     if ( pixel->co_adding == (unsigned char) 1 ) {
+       do {
+            *data++ = (unsigned int) cpntr[1]
+              + ((unsigned int) cpntr[0] << 8);
+            cpntr += 2;
+       } while ( ++np < pixel->length );
+     } else {
+       do {
+            *data++ = (unsigned int) cpntr[2]
+              + ((unsigned int) cpntr[1] << 8)
+              + ((unsigned int) cpntr[0] << 16);
+            cpntr += 3;
+       } while ( ++np < pixel->length );
+     }
+}
 
 /*+++++++++++++++++++++++++ Main Program or Functions +++++++++++++++*/
+
+int OpenFile( char* fname )
+{
+     if ( File_Is_Open ) (void) fclose( fd_nadc );
+
+     if ((fd_nadc = fopen( fname, "r" )) == NULL ) {
+       fprintf(stderr, strerror( errno ) );
+     } else
+       File_Is_Open = true;
+
+     return 0;
+ done:
+     return -1;
+}
+
+int CloseFile( void )
+{
+     int stat = 0;
+
+     if ( File_Is_Open ) {
+       stat = fclose( fd_nadc );
+       File_Is_Open = FALSE;
+     }
+     return stat;
+}
+
+int _ENVI_RD_MPH( struct mph_envi *mph )
+{
+     const char prognm[] = "_ENVI_RD_MPH";
+
+     if ( ! File_Is_Open ) {
+       fprintf(stderr, "No open stream" );
+       goto done;
+     }
+
+     ENVI_RD_MPH( fd_nadc, mph );
+     if ( IS_ERR_STAT_FATAL ) return -1;
+
+     return 1;
+ done:
+     return -1;
+}
+
+int _ENVI_RD_DSD( struct mph_envi *pmph, struct dsd_envi *dsd )
+{
+     const char prognm[] = "_ENVI_RD_DSD";
+
+     int nr_dsd = 0;
+
+     struct mph_envi  mph;
+
+     if ( ! File_Is_Open ) {
+       fprintf(stderr, "No open stream" );
+       goto done;
+     }
+
+     mph = *pmph;
+
+     nr_dsd = (int) ENVI_RD_DSD( fd_nadc, mph, dsd );
+     if ( IS_ERR_STAT_FATAL ) return -1;
+
+     return nr_dsd;
+ done:
+     return -1;
+}
+
 int _SCIA_LV0_RD_SPH (struct mph_envi *pmph, struct sph0_scia *sph)
 {
      const char prognm[] = "_SCIA_LV0_RD_SPH";
 
      struct mph_envi  mph;
-     struct sph0_scia *sph;
 
      if ( fileno( fd_nadc ) == -1 ) {
 	  fprintf(stderr, "No open stream");
@@ -59,7 +147,6 @@ int _GET_LV0_MDS_INFO(struct mph_envi *pmph, struct dsd_envi *pdsd, struct mds0_
 
      struct mph_envi  mph;
      struct dsd_envi  dsd;
-     struct mds0_info *info;
 
      if ( fileno( fd_nadc ) == -1 ) {
 	  fprintf(stderr, "No open stream" );
@@ -85,9 +172,6 @@ int _SCIA_LV0_RD_MDS_INFO (unsigned int num_dsd, struct dsd_envi *dsd, struct md
 
      unsigned int num_info;
      
-     struct dsd_envi  *dsd;
-     struct mds0_info *info;
-
      if ( fileno( fd_nadc ) == -1 ) {
 	  fprintf(stderr, "No open stream" );
       goto done;
@@ -110,7 +194,7 @@ int _SCIA_LV0_RD_AUX ( struct mds0_info *info, unsigned int num_info, struct mds
      int nr_aux;
 
      if ( fileno( fd_nadc ) == -1 ) {
-	  fprintf(stderr, NADC_ERR_FILE, "No open stream" );
+	  fprintf(stderr, "No open stream" );
       goto done;
      }
 
@@ -122,54 +206,18 @@ int _SCIA_LV0_RD_AUX ( struct mds0_info *info, unsigned int num_info, struct mds
      return -1;
 }
 
-int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, signed char cbuff, struct IDL_mds0_det *det, unsigned int *data)
+int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned char chan_mask, struct mds0_det *C_det, unsigned int *data)
 {
      const char prognm[] = "_SCIA_LV0_RD_DET";
 
      register unsigned int n_ch, n_cl;
 
-     unsigned char chan_mask;
      unsigned int  num_clus;
 
      register unsigned int nr = 0;
      register unsigned int offs = 0;
 
      unsigned int sz_data = 0;
-     unsigned int *data;
-
-     struct mds0_det  *C_det;
-     struct mds0_info *info;
-
-     struct IDL_chan_src
-     {
-	  unsigned char  cluster_id;
-	  unsigned char  co_adding;
-	  unsigned short sync;
-	  unsigned short block_nr;
-	  unsigned short start;
-	  unsigned short length;
-	  IDL_ULONG      pntr_data;            /* IDL uses 32-bit addresses */
-     };
-
-     struct IDL_det_src
-     {
-	  struct chan_hdr hdr;
-	  struct IDL_chan_src pixel[LV0_MX_CLUSTERS];
-
-     };
-
-     struct IDL_mds0_det 
-     { 
-	  unsigned short      bcps;
-	  unsigned short      num_chan;
-	  int                 orbit_vector[8];
-	  struct mjd_envi     isp;
-	  struct fep_hdr      fep_hdr;
-	  struct packet_hdr   packet_hdr;
-	  struct data_hdr     data_hdr;
-	  struct pmtc_hdr     pmtc_hdr;
-	  struct IDL_det_src  data_src[SCIENCE_CHANNELS];
-     } *det;
 
      if ( fileno( fd_nadc ) == -1 ) {
 	  NADC_ERROR( prognm, NADC_ERR_FILE, "No open stream" );
@@ -197,44 +245,11 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, signed char 
 	  SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
 	  Use_Extern_Alloc = TRUE;
 	  if ( IS_ERR_STAT_FATAL ) return -1;
-/*
- * copy C-struct to IDL-struct
- */
-	  det[nr].bcps = C_det->bcps;
-	  det[nr].num_chan = C_det->num_chan; 
-	  (void) memcpy( det[nr].orbit_vector, C_det->orbit_vector, 
-			 8 * sizeof( int  ) );
-	  (void) memcpy( &det[nr].isp, &C_det->isp, 
-			 sizeof( struct mjd_envi ) );
-	  (void) memcpy( &det[nr].fep_hdr, &C_det->fep_hdr, 
-			 sizeof( struct fep_hdr ) );
-	  (void) memcpy( &det[nr].packet_hdr, &C_det->packet_hdr, 
-			 sizeof( struct packet_hdr ) );
-	  (void) memcpy( &det[nr].data_hdr, &C_det->data_hdr, 
-			 sizeof( struct data_hdr ) );
-	  (void) memcpy( &det[nr].pmtc_hdr, &C_det->pmtc_hdr, 
-			 sizeof( struct pmtc_hdr ) );
 
 	  for ( n_ch = 0; n_ch < C_det->num_chan; n_ch++ ) {
 	       num_clus = C_det->data_src[n_ch].hdr.channel.field.clusters ;
 
-	       (void) memcpy( &det[nr].data_src[n_ch].hdr,
-                              &C_det->data_src[n_ch].hdr,
-			      sizeof( struct chan_hdr ) );
-
 	       for ( n_cl = 0; n_cl < num_clus; n_cl++ ) {
-		    det[nr].data_src[n_ch].pixel[n_cl].cluster_id =
-			 C_det->data_src[n_ch].pixel[n_cl].cluster_id;
-		    det[nr].data_src[n_ch].pixel[n_cl].co_adding =
-			 C_det->data_src[n_ch].pixel[n_cl].co_adding;
-		    det[nr].data_src[n_ch].pixel[n_cl].sync =
-			 C_det->data_src[n_ch].pixel[n_cl].sync;
-		    det[nr].data_src[n_ch].pixel[n_cl].block_nr =
-			 C_det->data_src[n_ch].pixel[n_cl].block_nr;
-		    det[nr].data_src[n_ch].pixel[n_cl].start =
-			 C_det->data_src[n_ch].pixel[n_cl].start;
-		    det[nr].data_src[n_ch].pixel[n_cl].length =
-			 C_det->data_src[n_ch].pixel[n_cl].length;
 
 		    if ( (offs+C_det->data_src[n_ch].pixel[n_cl].length)
 			 > sz_data ) goto done;
@@ -243,14 +258,9 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, signed char 
 		    offs += C_det->data_src[n_ch].pixel[n_cl].length;
 	       }
 	  }
-/*
- * release memory
- */
-	  SCIA_LV0_FREE_MDS_DET( 1, C_det );
      }
      return num_det;
  done:
-     SCIA_LV0_FREE_MDS_DET( 1, C_det );
      return -1;
 }
 
