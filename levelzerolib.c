@@ -20,7 +20,8 @@
 #include <defs_nadc.h>
 
 /*+++++ Global Variables +++++*/
-extern FILE *fd_nadc;
+FILE *fd_nadc;
+bool Use_Extern_Alloc = false;
 bool File_Is_Open = false;
 
 /*+++++ Static Variables +++++*/
@@ -59,6 +60,8 @@ int OpenFile( char* fname )
 
      if ((fd_nadc = fopen( fname, "r" )) == NULL ) {
        fprintf(stderr, strerror( errno ) );
+       fprintf(stderr, "\n" );
+       goto done;
      } else
        File_Is_Open = true;
 
