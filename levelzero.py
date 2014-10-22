@@ -2,6 +2,7 @@ from __future__ import print_function, division
 
 import numpy as np
 from ctypes import *
+import numpy.ctypeslib as npct
 
 #-- globals --------------------------------------------------------------------
 
@@ -155,7 +156,6 @@ class mds0_info(Structure):
 		("bcps", c_ushort),
 		("stateIndex", c_ushort),
 		("offset", c_uint),
-		("stateID", c_byte),
 		("mjd", mjd_envi),
 		("info_clus", info_clus * MAX_CLUSTER)]
 
@@ -417,8 +417,7 @@ class pmtc_frame(Structure):
 		("bench_az", c_ushort)] # bench_cntrl
 
 class mds0_aux(Structure):
-	_fields_ = [("packetID", c_byte),
-		("isp", mjd_envi),
+	_fields_ = [("isp", mjd_envi),
 		("fep_hdr", fep_hdr),
 		("packet_hdr", packet_hdr),
 		("data_hdr", data_hdr),
@@ -574,23 +573,71 @@ class LevelZeroFile:
 			for field_name, field_type in self.dsd[i_dsd]._fields_:
 				print(field_name, getattr(self.dsd[i_dsd], field_name))
 
+	# find the DSD that describes the scia source packets
+	def find_scia_source_dsd(self):
+		for dsd in self.dsd:
+			if getattr(dsd, "name") == "SCIAMACHY_SOURCE_PACKETS":
+				return dsd
+		return None
+
+	# pre: self.info is present 
+	def find_infos(self, packet_id, state_ids):
+		infos = []
+		for inf in self.info:
+			sid = getattr(inf, "stateID")
+			if sid in state_ids:
+				pid = getattr(inf, "packetID")
+				if pid == packet_id:
+					infos.append(inf)
+		return infos
+
+	def print_info(self, idx):
+		for field_name, field_type in self.info[idx]._fields_:
+			print(field_name, getattr(self.info[idx], field_name))
+
+	def print_aux(self, idx):
+		for field_name, field_type in self.dark_aux[idx]._fields_:
+			print(field_name, getattr(self.dark_aux[idx], field_name))
+
+	def print_det(self, idx):
+		for field_name, field_type in self.dark_det[idx]._fields_:
+			print(field_name, getattr(self.dark_det[idx], field_name))
+		mjd = getattr(self.dark_det[idx], "isp")
+		print("isp")
+		for field_name, field_type in mjd._fields_:
+			print(field_name, getattr(mjd, field_name))
+
 	def read_ch8(self):
+		#
 		# open
+		#
+
 		ret = self.lib.OpenFile("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
 		if ret < 0:
 			raise Exception("couldn't open file. return code = "+str(ret))
 
+		#
 		# read main product header
+		#
+
 		ret = self.lib._ENVI_RD_MPH(byref(self.mph))
-		print(ret)
+		if ret < 0:
+			raise Exception("couldn't read mph")
 		self.print_mph()
 
+		#
 		# read special product header
+		#
+
 		ret = self.lib._SCIA_LV0_RD_SPH(byref(self.mph), byref(self.sph))
-		print(ret)
+		if ret < 0:
+			raise Exception("couldn't read sph")
 		self.print_sph()
 
+		#
 		# read dsd's
+		#
+
 		n_dsd = self.mph.num_dsd
 		print("allocating "+str(n_dsd)+" dsd records..")
 		dsd_arr_type = dsd_envi * n_dsd
@@ -602,28 +649,83 @@ class LevelZeroFile:
 			n_dsd = ret
 		else:
 			raise Exception("_ENVI_RD_DSD() failed")
-
-		# read info
-		info = mds0_info()
-		ret = self.lib._SCIA_LV0_RD_MDS_INFO(c_uint(n_dsd), byref(self.dsd), byref(info))
-		print(ret)
-		print("----")
-		print(info)
-		for field_name, field_type in info._fields_:
-			print(field_name, getattr(info, field_name))
-		print("----")
-		# read all dsd's
 		self.print_dsd()
-		# for i in range(n_dsd):
-		# 	#TODO
-		# 	print(i)
 
-		#ret = self.lib._SCIA_LV0_RD_DET(info, unsigned int num_det, unsigned char chan_mask, struct mds0_det *C_det, unsigned int *data)
-		print(ret)
+		#
+		# read all info packets for dark det and source data
+		#
 
+		dsd = self.find_scia_source_dsd()
+		if dsd is None:
+			raise Exception("SCIAMACHY_SOURCE_PACKETS DSD not found!")
+		num_dsr = getattr(dsd, "num_dsr")
+		info_array_type = mds0_info * num_dsr
+		self.info = info_array_type()
+		ret = self.lib._SCIA_LV0_RD_MDS_INFO(c_uint(n_dsd), byref(self.dsd), byref(self.info))
+		print("nr info packets =", ret)
+		#self.print_info(5102)
+		info_dark_det = self.find_infos(1, (8,26,46,63,67)) # 1:DET
+		info_dark_aux = self.find_infos(2, (8,26,46,63,67)) # 2:AUX
+		print("nr of dark aux =", len(info_dark_aux))
+		print("nr of dark det =", len(info_dark_det))
+		info_dark_det_type = mds0_info * len(info_dark_det)
+		info_dark_det_ = info_dark_det_type()
+		info_dark_det_[:] = info_dark_det[:]
+		info_dark_aux_type = mds0_info * len(info_dark_aux)
+		info_dark_aux_ = info_dark_aux_type()
+		info_dark_aux_[:] = info_dark_aux[:]
+
+		#
+		# read detector data using det info packets
+		#
+
+		chan_mask = 1<<(8-1) # channel 8
+		det_array_type = mds0_det * len(info_dark_det)
+		self.dark_det = det_array_type()
+		det_data_type = c_uint * (1024*len(info_dark_det))
+		self.mountain = det_data_type()
+
+		# allocate the det_src structs that are pointed to by mds0_det
+		# although.. forget it. too much hassle. and it seems to be temporary in nature as well! 
+# 		det_src_type = det_src * len(info_dark_det)
+# 		data_src = det_src_type()
+# 		i = 0
+# 		for d in self.dark_det:
+# 			#print(data_src[i])
+# #			setattr(d, "data_src", POINTER(det_src)())
+# 			data_src = (det_src * 8) ()
+# 			print(data_src)
+# 			setattr(d, "data_src", POINTER(data_src[i]))
+# 			i += 1
+
+		ret = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(len(info_dark_det)), c_byte(chan_mask), byref(self.dark_det), self.mountain)
+		if ret != len(info_dark_det):
+			raise Exception("_SCIA_LV0_RD_DET failed! ret="+str(ret))
+		print(self.mountain[1024:2048])
+		print(len(info_dark_det))
+		self.print_det(1)
+		print()
+
+		#
+		# read aux data using aux info packets
+		#
+
+		aux_data_type = mds0_aux * len(info_dark_aux)
+		self.dark_aux = aux_data_type()
+		ret = self.lib._SCIA_LV0_RD_AUX(byref(info_dark_aux_), c_uint(len(info_dark_aux)), self.dark_aux)
+		if ret != len(info_dark_aux):
+			raise Exception("_SCIA_LV0_RD_AUX failed!")
+		print()
+		self.print_aux(0)
+		print()
+
+		#
 		# close
+		#
+
 		ret = self.lib.CloseFile()
-		print(ret)
+		if ret < 0:
+			raise Exception("couldn't close file. return code = "+str(ret))
 
 #-- main -----------------------------------------------------------------------
 

@@ -21,7 +21,7 @@
 
 /*+++++ Global Variables +++++*/
 FILE *fd_nadc;
-bool Use_Extern_Alloc = false;
+bool Use_Extern_Alloc = true;
 bool File_Is_Open = false;
 
 /*+++++ Static Variables +++++*/
@@ -176,10 +176,10 @@ int _SCIA_LV0_RD_MDS_INFO (unsigned int num_dsd, struct dsd_envi *dsd, struct md
      unsigned int num_info;
      
      if ( fileno( fd_nadc ) == -1 ) {
-	  fprintf(stderr, "No open stream" );
+	  fprintf(stderr, "No open stream\n" );
       goto done;
      }
-     num_info = SCIA_LV0_RD_MDS_INFO( fd_nadc, num_dsd, dsd, &info );
+     num_info = SCIA_LV0_RD_MDS_INFO(fd_nadc, num_dsd, dsd, &info);
      if ( IS_ERR_STAT_FATAL ) {
 	  fprintf(stderr, "GET_SCIA_LV0_MDS_INFO" );
       goto done;
@@ -197,7 +197,7 @@ int _SCIA_LV0_RD_AUX ( struct mds0_info *info, unsigned int num_info, struct mds
      int nr_aux;
 
      if ( fileno( fd_nadc ) == -1 ) {
-	  fprintf(stderr, "No open stream" );
+	  fprintf(stderr, "No open stream\n" );
       goto done;
      }
 
@@ -211,60 +211,58 @@ int _SCIA_LV0_RD_AUX ( struct mds0_info *info, unsigned int num_info, struct mds
 
 int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned char chan_mask, struct mds0_det *C_det, unsigned int *data)
 {
-     const char prognm[] = "_SCIA_LV0_RD_DET";
+    const char prognm[] = "_SCIA_LV0_RD_DET";
+    register unsigned int n_ch, n_cl;
+    unsigned int  num_clus;
+    register unsigned int nr = 0;
+    register unsigned int offs = 0;
+    unsigned int sz_data = 0;
 
-     register unsigned int n_ch, n_cl;
+    if ( fileno( fd_nadc ) == -1 ) 
+    {
+        NADC_ERROR( prognm, NADC_ERR_FILE, "No open stream" );
+        return -1;
+    }
 
-     unsigned int  num_clus;
+    nadc_stat = NADC_STAT_SUCCESS;
+    //printf("bla\n");
+    for ( nr = 0; nr < num_det; nr++, C_det++ ) 
+    {
+        for ( n_cl = 0; n_cl < (unsigned int) info[nr].numClusters; n_cl++ )
+            sz_data += info[nr].cluster[n_cl].length;
+        printf("fd_nadc=0x%X, info+nr=0x%X, chan_mask=0x%X, C_det=0x%X\n", (unsigned int) fd_nadc, (unsigned int) (info+nr), (unsigned int) chan_mask, (unsigned int) (C_det) );
 
-     register unsigned int nr = 0;
-     register unsigned int offs = 0;
+        C_det->data_src = malloc(10*sizeof(struct det_src));
+        SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
 
-     unsigned int sz_data = 0;
+        if ( IS_ERR_STAT_FATAL ) 
+        {
+            fprintf(stderr, "fatal!\n");
+            return -1;
+        }
+        //printf("bla\n");
 
-     if ( fileno( fd_nadc ) == -1 ) {
-	  NADC_ERROR( prognm, NADC_ERR_FILE, "No open stream" );
-	  return -1;
-     }
-#if 0
-     info  = (struct mds0_info *) argv[0];
-     num_det   = *(unsigned int *) argv[1];
-     cbuff = *(char *) argv[2];
-     chan_mask = (unsigned char) cbuff;
-     det   = (struct IDL_mds0_det *) argv[3];
-     data  = (unsigned int *) argv[4];
-#endif
-/*
- * we need SCIA_LV0_RD_DET to do dynamic memory allocation
- */
-     nadc_stat = NADC_STAT_SUCCESS;
-     for ( nr = 0; nr < num_det; nr++ ) {
-	  for ( n_cl = 0; n_cl < (unsigned int) info[nr].numClusters; n_cl++ )
-	       sz_data += info[nr].cluster[n_cl].length;
-/*
- * read one detector MDS into memory
- */
-	  Use_Extern_Alloc = FALSE;
-	  SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
-	  Use_Extern_Alloc = TRUE;
-	  if ( IS_ERR_STAT_FATAL ) return -1;
+        for ( n_ch = 0; n_ch < C_det->num_chan; n_ch++ ) 
+        {
+            //printf("bla\n");
+            num_clus = C_det->data_src[n_ch].hdr.channel.field.clusters ;
 
-	  for ( n_ch = 0; n_ch < C_det->num_chan; n_ch++ ) {
-	       num_clus = C_det->data_src[n_ch].hdr.channel.field.clusters ;
-
-	       for ( n_cl = 0; n_cl < num_clus; n_cl++ ) {
-
-		    if ( (offs+C_det->data_src[n_ch].pixel[n_cl].length)
-			 > sz_data ) goto done;
-		    UNPACK_LV0_PIXEL_VAL( &C_det->data_src[n_ch].pixel[n_cl],
-					  data+offs );
-		    offs += C_det->data_src[n_ch].pixel[n_cl].length;
-	       }
-	  }
-     }
-     return num_det;
+            for ( n_cl = 0; n_cl < num_clus; n_cl++ ) 
+            {
+                if ( (offs+C_det->data_src[n_ch].pixel[n_cl].length) > sz_data ) 
+                {
+                    fprintf(stderr, "size?!\n");
+                    goto done;
+                }
+                UNPACK_LV0_PIXEL_VAL( &C_det->data_src[n_ch].pixel[n_cl], data+offs );
+                offs += C_det->data_src[n_ch].pixel[n_cl].length;
+            }
+        }
+        free(C_det->data_src);
+    }
+    return num_det;
  done:
-     return -1;
+    return -1;
 }
 
 #if 0
@@ -293,3 +291,92 @@ int IDL_STDCALL _SCIA_LV0_RD_PMD ( int argc, void *argv[] )
      return -1;
 }
 #endif
+
+// returns all ch8 det readouts and mjd's
+int _GET_ALL_CH8_DET(char *fname, float *readouts, int *n_readouts)
+{
+    unsigned int indx_dsd;
+    unsigned int num_info;
+    unsigned int num_dsd;
+    struct mph_envi  mph;
+    struct sph0_scia sph;
+    struct mds0_info *info;
+    struct dsd_envi *dsd;
+    int ret;
+    struct mds0_aux *aux_out;
+    const char dsd_name[] = "SCIAMACHY_SOURCE_PACKETS";
+    FILE *fd;
+
+    if ((fd = fopen( fname, "r" )) == NULL ) {
+        fprintf(stderr, strerror( errno ) );
+        fprintf(stderr, "\n" );
+        goto done;
+    }
+
+    // read Main Product Header
+    ENVI_RD_MPH( fd, &mph );
+    //num_dsd = mph.num_dsd;
+
+    // read special product header
+    SCIA_LV0_RD_SPH(fd, mph, &sph);
+
+    num_dsd = (int) ENVI_RD_DSD( fd_nadc, mph, dsd );
+    if ( IS_ERR_STAT_FATAL ) {
+        fprintf(stderr, "ENVI_RD_DSD() failed!\n");
+    }
+
+    // get index to data set descriptor
+    indx_dsd = GET_ENVI_DSD_INDX( num_dsd, dsd, dsd_name );
+    if ( IS_ERR_STAT_ABSENT ) {
+        fprintf(stderr, dsd_name );
+        goto done;
+    }
+
+    // allocate memory to store info-records
+    num_info = dsd[indx_dsd].num_dsr;
+    info = (struct mds0_info *) malloc( (size_t) num_info * sizeof(struct mds0_info) );
+    if ( info == NULL ) {
+        fprintf(stderr, "error mds0_info\n");
+        goto done;
+    }
+
+    // extract info-records from input file
+    num_info = GET_SCIA_LV0_MDS_INFO( fd, mph, &dsd[indx_dsd], info );
+    printf("num_info = %d\n", num_info);
+
+    // TODO: filter on state id  (8,26,46,63,67) and packet_id (AUX)
+
+    int num_aux, i_info;
+    for (i_info = 0, num_aux = 0; i_info < num_info; i_info++)
+    {
+        struct mds0_info *inf;
+        inf = info+i_info;
+        if ((inf->stateID == 8) || (inf->stateID == 26) || (inf->stateID == 46) || (inf->stateID == 63) || (inf->stateID == 63))
+        {
+            if (inf->packetID == 2) // AUX
+            {
+                memmove(info+num_aux, info+i_info, sizeof(struct mds0_info));
+                num_aux++;
+            }
+        }
+    }
+
+    // read Auxiliary source packets
+    SCIA_LV0_RD_AUX(fd, info, num_info, &aux_out);
+    //IF status NE 0 THEN NADC_ERR_TRACE
+
+    // read Detector source packets
+    //PRINT, 'SCIA_LV0_RD_MDS_DET'
+    //SCIA_LV0_RD_DET, info, mds_det, status=status, state_id=6
+    //IF status NE 0 THEN NADC_ERR_TRACE
+
+    ret = fclose( fd );
+    if (ret < 0) {
+        fprintf(stderr, "failed to close file\n" );
+        goto done;
+    }
+
+    return 0;
+done:
+    return -1;        
+}
