@@ -304,8 +304,8 @@ struct pmtc_hdr
 class pmtc_hdr(Structure):
 	_fields_ = [("two_byte1", c_ushort),
 		("scanner_mode", c_ushort),
-		("four_byte1", c_ulong),
-		("four_byte2", c_ulong),
+		("four_byte1", c_uint), # 32 bit.. on a 64 bit build? this is bug.. but well.. also note that c_ulong is 64 bit here!
+		("four_byte2", c_uint),
 		("factor", c_byte * 6)]
 
 """
@@ -408,7 +408,8 @@ class data_hdr(Structure):
 		("length", c_ushort),
 		("two_byte1", c_ushort),
 		("two_byte2", c_ushort),
-		("on_board_time", c_uint)]
+		("on_board_time", c_uint)] # 32 bit, contrary to what you'd expect, most likely a ctypes bug 
+#		("on_board_time", c_ulong)]
 
 class pmtc_frame(Structure):
 	_fields_ = [("bcp", aux_bcp * NUM_LV0_AUX_BCP),
@@ -520,8 +521,10 @@ class chan_hdr(Structure):
 		("temp", c_ushort),
 		("two_byte1", c_ushort),
 		("two_byte2", c_ushort),
-		("four_byte1", c_ulong),
-		("four_byte2", c_ulong)]
+		("four_byte1", c_uint),
+		("four_byte2", c_uint)]
+#		("four_byte1", c_ulong),
+#		("four_byte2", c_ulong)]
 
 class chan_src(Structure):
 	_fields_ = [
@@ -602,10 +605,33 @@ class LevelZeroFile:
 	def print_det(self, idx):
 		for field_name, field_type in self.dark_det[idx]._fields_:
 			print(field_name, getattr(self.dark_det[idx], field_name))
+		orbit_vector = getattr(self.dark_det[idx], "orbit_vector")
+		print("orbit_vector:")
+		for el in orbit_vector:
+			print(el)
 		mjd = getattr(self.dark_det[idx], "isp")
-		print("isp")
+		print("isp:")
 		for field_name, field_type in mjd._fields_:
 			print(field_name, getattr(mjd, field_name))
+		fep_hdr = getattr(self.dark_det[idx], "fep_hdr")
+		print("fep_hdr:")
+		for field_name, field_type in fep_hdr._fields_:
+			print(field_name, getattr(fep_hdr, field_name))
+		gsrt = getattr(fep_hdr, "gsrt") # fep_hdr.gsrt mjd_envi struct
+		for field_name, field_type in gsrt._fields_:
+			print(field_name, getattr(gsrt, field_name))
+		packet_hdr = getattr(self.dark_det[idx], "packet_hdr")
+		print("packet_hdr:")
+		for field_name, field_type in packet_hdr._fields_:
+			print(field_name, getattr(packet_hdr, field_name))
+		data_hdr = getattr(self.dark_det[idx], "data_hdr")
+		print("data_hdr:")
+		for field_name, field_type in data_hdr._fields_:
+			print(field_name, getattr(data_hdr, field_name))
+		pmtc_hdr = getattr(self.dark_det[idx], "pmtc_hdr")
+		print("pmtc_hdr:")
+		for field_name, field_type in pmtc_hdr._fields_:
+			print(field_name, getattr(pmtc_hdr, field_name))
 
 	def read_ch8(self):
 		#
@@ -703,7 +729,7 @@ class LevelZeroFile:
 			raise Exception("_SCIA_LV0_RD_DET failed! ret="+str(ret))
 		print(self.mountain[1024:2048])
 		print(len(info_dark_det))
-		self.print_det(1)
+		self.print_det(1000)
 		print()
 
 		#

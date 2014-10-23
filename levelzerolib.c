@@ -230,7 +230,6 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
     {
         for ( n_cl = 0; n_cl < (unsigned int) info[nr].numClusters; n_cl++ )
             sz_data += info[nr].cluster[n_cl].length;
-        printf("fd_nadc=0x%X, info+nr=0x%X, chan_mask=0x%X, C_det=0x%X\n", (unsigned int) fd_nadc, (unsigned int) (info+nr), (unsigned int) chan_mask, (unsigned int) (C_det) );
 
         C_det->data_src = malloc(10*sizeof(struct det_src));
         SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
