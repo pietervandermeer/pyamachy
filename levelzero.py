@@ -2,7 +2,8 @@ from __future__ import print_function, division
 
 import numpy as np
 from ctypes import *
-import numpy.ctypeslib as npct
+#import numpy.ctypeslib as npct
+from envisat import PhaseConverter
 
 #-- globals --------------------------------------------------------------------
 
@@ -553,6 +554,13 @@ class mds0_det(Structure):
 
 #-- functions ------------------------------------------------------------------
 
+# convert ctypes mjd_envi to float mjd
+def convert_mjd_struct_to_float(struct):
+	d = getattr(struct, "days")
+	s = getattr(struct, "secnd")
+	mu = getattr(struct, "musec")
+	return d + (s + mu/1000000.)/(3600*24.)
+
 class LevelZeroFile:
 	"""
 	class that can read data from scia level 0 files
@@ -561,6 +569,11 @@ class LevelZeroFile:
 		self.lib = CDLL('levelzerolib.so')
 		self.mph = mph_envi()
 		self.sph = sph0_scia()
+		self.pc = PhaseConverter()
+		self.fname = None 
+
+	def set_file(self, fname):
+		self.fname = fname
 
 	def print_mph(self):
 		for field_name, field_type in self.mph._fields_:
@@ -633,14 +646,17 @@ class LevelZeroFile:
 		for field_name, field_type in pmtc_hdr._fields_:
 			print(field_name, getattr(pmtc_hdr, field_name))
 
-	def read_ch8(self):
+	# output:
+	# self.readouts: ch8 detector readouts (1024xN float32)
+	# self.dark_det_mjds: MJD2000 (float64) of readouts
+	def read_ch8(self, verbose=False):
 		#
 		# open
 		#
 
-		ret = self.lib.OpenFile("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
+		ret = self.lib.OpenFile(self.fname)
 		if ret < 0:
-			raise Exception("couldn't open file. return code = "+str(ret))
+ 			raise Exception("couldn't open file ["+self.fname+"]. return code = "+str(ret))
 
 		#
 		# read main product header
@@ -649,7 +665,8 @@ class LevelZeroFile:
 		ret = self.lib._ENVI_RD_MPH(byref(self.mph))
 		if ret < 0:
 			raise Exception("couldn't read mph")
-		self.print_mph()
+		if verbose:
+			self.print_mph()
 
 		#
 		# read special product header
@@ -658,24 +675,27 @@ class LevelZeroFile:
 		ret = self.lib._SCIA_LV0_RD_SPH(byref(self.mph), byref(self.sph))
 		if ret < 0:
 			raise Exception("couldn't read sph")
-		self.print_sph()
+		if verbose:
+			self.print_sph()
 
 		#
 		# read dsd's
 		#
 
 		n_dsd = self.mph.num_dsd
-		print("allocating "+str(n_dsd)+" dsd records..")
+		if verbose:
+			print("allocating "+str(n_dsd)+" dsd records..")
 		dsd_arr_type = dsd_envi * n_dsd
 		self.dsd = dsd_arr_type()
-		print(self.dsd)
+		if verbose:
+			print(self.dsd)
 		ret = self.lib._ENVI_RD_DSD(byref(self.mph), byref(self.dsd))
-		print(ret)
 		if ret >= 0:
 			n_dsd = ret
 		else:
 			raise Exception("_ENVI_RD_DSD() failed")
-		self.print_dsd()
+		if verbose:
+			self.print_dsd()
 
 		#
 		# read all info packets for dark det and source data
@@ -688,12 +708,14 @@ class LevelZeroFile:
 		info_array_type = mds0_info * num_dsr
 		self.info = info_array_type()
 		ret = self.lib._SCIA_LV0_RD_MDS_INFO(c_uint(n_dsd), byref(self.dsd), byref(self.info))
-		print("nr info packets =", ret)
+		if verbose:
+			print("nr info packets =", ret)
 		#self.print_info(5102)
 		info_dark_det = self.find_infos(1, (8,26,46,63,67)) # 1:DET
 		info_dark_aux = self.find_infos(2, (8,26,46,63,67)) # 2:AUX
-		print("nr of dark aux =", len(info_dark_aux))
-		print("nr of dark det =", len(info_dark_det))
+		if verbose:
+			print("nr of dark aux =", len(info_dark_aux))
+			print("nr of dark det =", len(info_dark_det))
 		info_dark_det_type = mds0_info * len(info_dark_det)
 		info_dark_det_ = info_dark_det_type()
 		info_dark_det_[:] = info_dark_det[:]
@@ -708,8 +730,9 @@ class LevelZeroFile:
 		chan_mask = 1<<(8-1) # channel 8
 		det_array_type = mds0_det * len(info_dark_det)
 		self.dark_det = det_array_type()
+
 		det_data_type = c_uint * (1024*len(info_dark_det))
-		self.mountain = det_data_type()
+		self.det_data = det_data_type()
 
 		# allocate the det_src structs that are pointed to by mds0_det
 		# although.. forget it. too much hassle. and it seems to be temporary in nature as well! 
@@ -724,16 +747,59 @@ class LevelZeroFile:
 # 			setattr(d, "data_src", POINTER(data_src[i]))
 # 			i += 1
 
-		ret = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(len(info_dark_det)), c_byte(chan_mask), byref(self.dark_det), self.mountain)
-		if ret != len(info_dark_det):
+		n_dark_det = len(info_dark_det)
+		ret = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(n_dark_det), c_byte(chan_mask), byref(self.dark_det), self.det_data)
+		if ret != n_dark_det:
 			raise Exception("_SCIA_LV0_RD_DET failed! ret="+str(ret))
-		print(self.mountain[1024:2048])
-		print(len(info_dark_det))
-		self.print_det(1000)
-		print()
+
+		# print some data as a test
+		#self.det_data_ = np.empty((1024, n_dark_det), dtype=np.float32)
+		#self.det_data_[:,:] = self.det_data[:]
+		self.readouts = np.frombuffer(self.det_data, dtype=np.uint32).reshape((n_dark_det, 1024))
+		# print(self.det_data[1024:2048])
+		# print(self.readouts[1,:])
+		# print(len(info_dark_det))
+		# self.print_det(100)
+		# print()
 
 		#
-		# read aux data using aux info packets
+		# convert all detector mjds to something we can use in numpy
+		#
+
+		self.dark_det_mjds = np.empty((n_dark_det), dtype=np.float64)
+		# self.dark_det_mjds_ = np.empty((n_dark_det), dtype=np.float64)
+		for i in range(n_dark_det):
+			det = self.dark_det[i]
+			isp = getattr(det, "isp")
+			self.dark_det_mjds[i] = convert_mjd_struct_to_float(isp)
+			# fep = getattr(det, "fep_hdr") 
+			# gsrt = getattr(fep, "gsrt") # ground station reception time.. we don't need that
+			# self.dark_det_mjds_[i] = convert_mjd_struct_to_float(gsrt)
+			bcps = getattr(det, "bcps")
+			self.dark_det_mjds[i] += bcps / (16.*3600*24)
+
+		#
+		# extract the list of state id's
+		#
+
+		self.dark_state_ids = np.empty((n_dark_det), dtype=np.byte)
+		for i in range(n_dark_det):
+			self.dark_state_ids[i] = getattr(info_dark_det[i], "stateID")
+
+		#
+		# convert mjd's to eclipse orbit phase
+		#
+
+		phases, orbits = self.pc.get_phase(self.dark_det_mjds, eclipseMode=True, getOrbits=True)
+		self.ephases = orbits + phases
+
+		# debog
+
+		# for i in range(n_dark_det):
+		# 	print(self.dark_det_mjds[i], self.dark_state_ids[i])
+
+		#
+		# read aux data using aux info packets (really not necessary in this case, but ok.)
 		#
 
 		aux_data_type = mds0_aux * len(info_dark_aux)
@@ -741,9 +807,10 @@ class LevelZeroFile:
 		ret = self.lib._SCIA_LV0_RD_AUX(byref(info_dark_aux_), c_uint(len(info_dark_aux)), self.dark_aux)
 		if ret != len(info_dark_aux):
 			raise Exception("_SCIA_LV0_RD_AUX failed!")
-		print()
-		self.print_aux(0)
-		print()
+
+		# print()
+		# self.print_aux(0)
+		# print()
 
 		#
 		# close
@@ -756,5 +823,24 @@ class LevelZeroFile:
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
-	zero = LevelZeroFile()
-	zero.read_ch8()
+	import subprocess
+
+	orbit_range = [10000,10010]
+	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
+	text_list = subprocess.check_output(cmd, shell=True)
+	fnames = text_list.splitlines()
+
+	zero1 = LevelZeroFile()
+	# zero.set_file("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
+	for fname in fnames:
+		if zero1.fname is not None:
+			print("zero1 fname:", zero1.fname)
+			print(zero1.ephases)
+			print(zero1.dark_det_mjds)
+		zero2 = LevelZeroFile()
+		print(fname)
+		zero2.set_file(fname)
+		zero2.read_ch8()
+		print(zero2.ephases)
+		print(zero2.dark_det_mjds)
+		zero1 = zero2
