@@ -3,7 +3,7 @@ from __future__ import print_function, division
 import numpy as np
 from ctypes import *
 #import numpy.ctypeslib as npct
-from envisat import PhaseConverter
+from envisat import PhaseConverter, NonlinCorrector
 
 #-- globals --------------------------------------------------------------------
 
@@ -570,6 +570,8 @@ class LevelZeroFile:
 		self.mph = mph_envi()
 		self.sph = sph0_scia()
 		self.pc = PhaseConverter()
+        self.nlc = NonlinCorrector()
+        self.corrected = False
 		self.fname = None 
 
 	def set_file(self, fname):
@@ -820,27 +822,111 @@ class LevelZeroFile:
 		if ret < 0:
 			raise Exception("couldn't close file. return code = "+str(ret))
 
+        def correct_nlin(self):
+            self.readouts = self.nlc.correct_ch8(self.readouts)
+            self.corrected = True
+
+# TODO: can better be done with exact char positions, since this is the way l0 filenames are defined
+def orbit_from_fname(fname):
+    strs = fname.split("_")
+    if len(strs) < 9:
+        raise Exception("wrong amount of underscores in level 0 file!")
+    return strs[-2]
+
+def test_orbit_from_fname(fname):
+    test_fname = "/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1"
+    print(orbit_from_fname(test_fname))
+
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
-	import subprocess
+    import subprocess
+    from vardark_module import load_varkdark_orbit
+    from sciamachy_module import get_darkstateid
 
-	orbit_range = [10000,10010]
-	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
-	text_list = subprocess.check_output(cmd, shell=True)
-	fnames = text_list.splitlines()
+    dbname_long = "/SCIA/SDMF3.1/pieter/vardark_long.h5"
 
-	zero1 = LevelZeroFile()
-	# zero.set_file("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
-	for fname in fnames:
-		if zero1.fname is not None:
-			print("zero1 fname:", zero1.fname)
-			print(zero1.ephases)
-			print(zero1.dark_det_mjds)
-		zero2 = LevelZeroFile()
-		print(fname)
-		zero2.set_file(fname)
-		zero2.read_ch8()
-		print(zero2.ephases)
-		print(zero2.dark_det_mjds)
-		zero1 = zero2
+    orbit_range = [10000,10010]
+    cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
+    text_list = subprocess.check_output(cmd, shell=True)
+    fnames = text_list.splitlines()
+
+    output_fname = "noise_tng.h5"
+    fout = h5py.File(output_fname, "w")
+    exp_times = [0.125, 0.5, 1.0]
+
+    zero1 = LevelZeroFile()
+    # zero.set_file("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
+    for fname in fnames:
+        orbit = orbit_from_fname(fname)
+        zero2 = LevelZeroFile()
+        print(fname)
+        zero2.set_file(fname)
+        zero2.read_ch8()
+        zero2.correct() 
+        #print(zero2.ephases)
+        #print(zero2.dark_det_mjds)
+        if zero1.fname is None:
+            continue
+
+        #
+        # if we have a complete orbit window then get all the readouts that belong to the actual orbit
+        #
+
+        #print("zero1 fname:", zero1.fname)
+        #print(zero1.ephases)
+        #print(zero1.dark_det_mjds)
+        ephases = np.concatenate((zero1.ephases, zero2.ephases))
+        readouts = np.concatenate((zero1.readouts, zero2.readouts))
+        states = np.concatenate((zero1.dark_state_ids, zero2.dark_state_ids))
+        orbits = np.trunc(ephases) 
+        idx = orbits == orbit
+        ephases = ephases[idx]
+        readouts = readouts[idx,:]
+        states = states[idx]
+        wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, dbname_long)
+        
+        #
+        # compute and store noise for each exposure time
+        #
+
+        for exp_time in exp_times:
+
+            # create output group
+            grp = fout["pet"+str(exp_time)]
+
+            stateid = get_darkstateid(exp_time, orbit)
+            idx = states == stateid
+            ephases_ = np.mod(ephases[idx],1)
+            readouts_ = readouts[idx,:]
+    
+            #
+            # subtract dark signal to remove any form of trend
+            #
+
+            i_phase = 0
+            for phase in ephases_:  # TODO phase interpolation
+                ephase_idx = argmin(np.abs(phase - ephases_))
+                readouts_[i_phase,:] -= wave[ephase_idx,:] + wave_ao
+                i_phase += 1
+
+            #
+            # compute noise figures
+            #
+
+            # TODO: are we using floats here?? check!
+            noise = readouts_.std(axis=0)
+            # TODO: median abs dev?
+            # TODO: also compute mean to verify there is no bias? 
+
+            #
+            # store noise figures
+            #
+
+            #noise_dset = h5py.create_dataset(grp, (,), "noise")
+
+        # prepare for next orbit
+	    zero1 = zero2
+
+    fout.close()
+

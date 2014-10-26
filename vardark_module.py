@@ -17,7 +17,7 @@
 #   Boston, MA  02111-1307, USA.
 #
 
-from __future__ import print_function
+from __future__ import print_function, division
 
 import h5py
 import numpy
@@ -430,7 +430,7 @@ class VarDarkDb:
         self.created = False
         self.ofilt = orbitfilter()
         # initialize a minimal version
-        self.alldarks = AllDarks([24000,24010], [0.5, 1.0])
+        self.alldarks = AllDarks([0.5, 1.0])
 
         if args:
             self.db_name  = args.db_name
@@ -644,6 +644,20 @@ class VarDarkDb:
             self.append(vd)
         else:
             self.create(vd)
+
+def load_varkdark_orbit(orbit, db_name):
+    fid = h5py.File(db_name, 'r', libver='latest' )
+    #n_pix = vardark.numPixels
+    phase_dset = fid["orbitPhase"]
+    orbit_dset = fid["orbit"]
+    wave_dset = fid["wave"]
+    idx_fid = orbit_dset[:] == orbit
+
+    fin = h5py.File("interpolated_monthlies.h5", "r")
+    in_orblist = fin["orbits"]
+    idx_fin = in_orbitlist[:] == orbit
+
+    return phase_dset[idx_fid], orbit_dset[idx_fid], wave_dset[idx_fid,:], fin['aos'][idx_fin,:]
 
 #- main ------------------------------------------------------------------------
 
