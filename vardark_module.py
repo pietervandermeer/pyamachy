@@ -652,12 +652,13 @@ def load_varkdark_orbit(orbit, db_name):
     orbit_dset = fid["orbit"]
     wave_dset = fid["wave"]
     idx_fid = orbit_dset[:] == orbit
+    idx_ph_fid = np.trunc(phase_dset[:]) == orbit
 
     fin = h5py.File("interpolated_monthlies.h5", "r")
-    in_orblist = fin["orbits"]
+    in_orbitlist = fin["orbits"]
     idx_fin = in_orbitlist[:] == orbit
 
-    return phase_dset[idx_fid], orbit_dset[idx_fid], wave_dset[idx_fid,:], fin['aos'][idx_fin,:]
+    return phase_dset[idx_ph_fid], orbit_dset[idx_fid], wave_dset[idx_ph_fid,:], fin['aos'][idx_fin,:]
 
 #- main ------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@
 #include <defs_scia.h>
 #include <proto_scia.h>
 
-bool Use_Extern_Alloc = false;
+bool Use_Extern_Alloc = true;
 
 void myprint(void);
 

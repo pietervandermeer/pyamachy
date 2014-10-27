@@ -181,7 +181,7 @@ int _SCIA_LV0_RD_MDS_INFO (unsigned int num_dsd, struct dsd_envi *dsd, struct md
      }
      num_info = SCIA_LV0_RD_MDS_INFO(fd_nadc, num_dsd, dsd, &info);
      if ( IS_ERR_STAT_FATAL ) {
-	  fprintf(stderr, "GET_SCIA_LV0_MDS_INFO" );
+	  fprintf(stderr, "GET_SCIA_LV0_MDS_INFO\n" );
       goto done;
      }
 
@@ -223,15 +223,19 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
         NADC_ERROR( prognm, NADC_ERR_FILE, "No open stream" );
         return -1;
     }
+    struct det_src *tmp_buf = malloc(10*sizeof(struct det_src));
 
     nadc_stat = NADC_STAT_SUCCESS;
     //printf("bla\n");
     for ( nr = 0; nr < num_det; nr++, C_det++ ) 
     {
+        printf("nr=%d\n", nr);
+
         for ( n_cl = 0; n_cl < (unsigned int) info[nr].numClusters; n_cl++ )
             sz_data += info[nr].cluster[n_cl].length;
 
-        C_det->data_src = malloc(10*sizeof(struct det_src));
+        C_det->data_src = tmp_buf;
+        //C_det->data_src = malloc(10*sizeof(struct det_src));
         SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
 
         if ( IS_ERR_STAT_FATAL ) 
@@ -239,15 +243,15 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
             fprintf(stderr, "fatal!\n");
             return -1;
         }
-        //printf("bla\n");
-
+ 
         for ( n_ch = 0; n_ch < C_det->num_chan; n_ch++ ) 
         {
-            //printf("bla\n");
             num_clus = C_det->data_src[n_ch].hdr.channel.field.clusters ;
+            printf("n_ch=%d, num_clus=%d\n", n_ch, num_clus);
 
             for ( n_cl = 0; n_cl < num_clus; n_cl++ ) 
             {
+                printf("offs=%d\n", offs);
                 if ( (offs+C_det->data_src[n_ch].pixel[n_cl].length) > sz_data ) 
                 {
                     fprintf(stderr, "size?!\n");
@@ -257,8 +261,8 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
                 offs += C_det->data_src[n_ch].pixel[n_cl].length;
             }
         }
-        free(C_det->data_src);
     }
+    free(tmp_buf);
     return num_det;
  done:
     return -1;

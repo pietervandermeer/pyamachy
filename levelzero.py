@@ -1,9 +1,11 @@
 from __future__ import print_function, division
 
 import numpy as np
+import h5py
 from ctypes import *
 #import numpy.ctypeslib as npct
-from envisat import PhaseConverter, NonlinCorrector
+from envisat import PhaseConverter
+from sciamachy_module import NonlinCorrector
 
 #-- globals --------------------------------------------------------------------
 
@@ -570,12 +572,21 @@ class LevelZeroFile:
 		self.mph = mph_envi()
 		self.sph = sph0_scia()
 		self.pc = PhaseConverter()
-        self.nlc = NonlinCorrector()
-        self.corrected = False
+		self.nlc = NonlinCorrector()
+		self.corrected = False
 		self.fname = None 
 
 	def set_file(self, fname):
 		self.fname = fname
+
+	# TODO: can better be done with exact char positions, since this is the way l0 filenames are defined
+	def get_orbit(self):
+		if self.fname is None:
+			raise Exception("no filename set!")
+		strs = self.fname.split("_")
+		if len(strs) < 9:
+			raise Exception("wrong amount of underscores in level 0 file!")
+		return int(strs[-2])
 
 	def print_mph(self):
 		for field_name, field_type in self.mph._fields_:
@@ -712,16 +723,17 @@ class LevelZeroFile:
 		ret = self.lib._SCIA_LV0_RD_MDS_INFO(c_uint(n_dsd), byref(self.dsd), byref(self.info))
 		if verbose:
 			print("nr info packets =", ret)
-		#self.print_info(5102)
 		info_dark_det = self.find_infos(1, (8,26,46,63,67)) # 1:DET
 		info_dark_aux = self.find_infos(2, (8,26,46,63,67)) # 2:AUX
+		n_dark_det = len(info_dark_det)
+		n_dark_aux = len(info_dark_aux)
 		if verbose:
-			print("nr of dark aux =", len(info_dark_aux))
-			print("nr of dark det =", len(info_dark_det))
-		info_dark_det_type = mds0_info * len(info_dark_det)
+			print("nr of dark aux =", n_dark_aux)
+			print("nr of dark det =", n_dark_det)
+		info_dark_det_type = mds0_info * n_dark_det
 		info_dark_det_ = info_dark_det_type()
 		info_dark_det_[:] = info_dark_det[:]
-		info_dark_aux_type = mds0_info * len(info_dark_aux)
+		info_dark_aux_type = mds0_info * n_dark_aux
 		info_dark_aux_ = info_dark_aux_type()
 		info_dark_aux_[:] = info_dark_aux[:]
 
@@ -730,34 +742,24 @@ class LevelZeroFile:
 		#
 
 		chan_mask = 1<<(8-1) # channel 8
-		det_array_type = mds0_det * len(info_dark_det)
+		det_array_type = mds0_det * n_dark_det
 		self.dark_det = det_array_type()
 
-		det_data_type = c_uint * (1024*len(info_dark_det))
+		det_data_type = c_uint * (1024*n_dark_det)
 		self.det_data = det_data_type()
 
-		# allocate the det_src structs that are pointed to by mds0_det
-		# although.. forget it. too much hassle. and it seems to be temporary in nature as well! 
-# 		det_src_type = det_src * len(info_dark_det)
-# 		data_src = det_src_type()
-# 		i = 0
-# 		for d in self.dark_det:
-# 			#print(data_src[i])
-# #			setattr(d, "data_src", POINTER(det_src)())
-# 			data_src = (det_src * 8) ()
-# 			print(data_src)
-# 			setattr(d, "data_src", POINTER(data_src[i]))
-# 			i += 1
-
-		n_dark_det = len(info_dark_det)
 		ret = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(n_dark_det), c_byte(chan_mask), byref(self.dark_det), self.det_data)
 		if ret != n_dark_det:
 			raise Exception("_SCIA_LV0_RD_DET failed! ret="+str(ret))
+
+		for i in range(n_dark_det):
+			self.print_det(i)
 
 		# print some data as a test
 		#self.det_data_ = np.empty((1024, n_dark_det), dtype=np.float32)
 		#self.det_data_[:,:] = self.det_data[:]
 		self.readouts = np.frombuffer(self.det_data, dtype=np.uint32).reshape((n_dark_det, 1024))
+		print(self.readouts.shape)
 		# print(self.det_data[1024:2048])
 		# print(self.readouts[1,:])
 		# print(len(info_dark_det))
@@ -780,6 +782,10 @@ class LevelZeroFile:
 			bcps = getattr(det, "bcps")
 			self.dark_det_mjds[i] += bcps / (16.*3600*24)
 
+		if verbose:
+			print(n_dark_det)
+			print("my very own mjds:", self.dark_det_mjds)
+
 		#
 		# extract the list of state id's
 		#
@@ -794,6 +800,8 @@ class LevelZeroFile:
 
 		phases, orbits = self.pc.get_phase(self.dark_det_mjds, eclipseMode=True, getOrbits=True)
 		self.ephases = orbits + phases
+		if verbose:
+			print("my very own ephases:", self.ephases)
 
 		# debog
 
@@ -826,107 +834,151 @@ class LevelZeroFile:
             self.readouts = self.nlc.correct_ch8(self.readouts)
             self.corrected = True
 
-# TODO: can better be done with exact char positions, since this is the way l0 filenames are defined
-def orbit_from_fname(fname):
-    strs = fname.split("_")
-    if len(strs) < 9:
-        raise Exception("wrong amount of underscores in level 0 file!")
-    return strs[-2]
-
 def test_orbit_from_fname(fname):
-    test_fname = "/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1"
-    print(orbit_from_fname(test_fname))
+	l0 = LevelZeroFile()
+	test_fname = "/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1"
+	l0.set_file(test_fname)
+	print(l0.get_orbit(test_fname))
+
+def saveNoise(orbit, exp_time, noise):
+	idx = orbit_dset[:] == orbit
+	if idx.sum() > 0:
+		# replace
+		i = np.nonzero(idx)[0]
+		orbit_dset[idx] = orbit
+		noise_dset[i,:] = noise
+	else:
+		# append
+		ax1 = orbit_dset.len()
+		orbit_dset.resize(ax1+1, axis=0)
+		orbit_dset[ax1] = orbit
+		ax1 = noise_dset.len()
+		noise_dset.resize(ax1+1, axis=0)
 
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import subprocess
-    from vardark_module import load_varkdark_orbit
-    from sciamachy_module import get_darkstateid
+	import subprocess
+	from vardark_module import load_varkdark_orbit
+	from sciamachy_module import get_darkstateid, petcorr, n_chanpix
+	import envisat
 
-    dbname_long = "/SCIA/SDMF3.1/pieter/vardark_long.h5"
+	n_pix = n_chanpix
+	dbname_long = "/SCIA/SDMF31/pieter/vardark_long.h5"
 
-    orbit_range = [10000,10010]
-    cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
-    text_list = subprocess.check_output(cmd, shell=True)
-    fnames = text_list.splitlines()
+	orbit_range = [44000,44002]
+#	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
+	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=P"
+	text_list = subprocess.check_output(cmd, shell=True)
+	fnames = text_list.splitlines()
 
-    output_fname = "noise_tng.h5"
-    fout = h5py.File(output_fname, "w")
-    exp_times = [0.125, 0.5, 1.0]
+	output_fname = "noise_tng.h5"
+	exp_times = [0.125, 0.5, 1.0]
+	if h5py.is_hdf5(output_fname):
+		fout = h5py.File(output_fname, "r+") # assuming all the groups and datasets are already present.
+	else:
+		fout = h5py.File(output_fname, "w")
+		for exp_time in exp_times:
+			print("creating groups..")
+			grp = fout.create_group("pet"+str(exp_time))
+			orbit_dset = grp.create_dataset("orbit", (0,), maxshape = (envisat.last_orbit,), dtype='i')
+			noise_dset = grp.create_dataset("noise", (0, n_pix), maxshape = (envisat.last_orbit, n_pix), dtype='f')
 
-    zero1 = LevelZeroFile()
-    # zero.set_file("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
-    for fname in fnames:
-        orbit = orbit_from_fname(fname)
-        zero2 = LevelZeroFile()
-        print(fname)
-        zero2.set_file(fname)
-        zero2.read_ch8()
-        zero2.correct() 
-        #print(zero2.ephases)
-        #print(zero2.dark_det_mjds)
-        if zero1.fname is None:
-            continue
+	zero1 = LevelZeroFile()
+	# zero.set_file("/SCIA/LV0_01/O/SCI_NL__0POLRA20040128_161459_000060052023_00427_10000_2049.N1")
+	for fname in fnames:
+		zero2 = LevelZeroFile()
+		print(fname)
+		zero2.set_file(fname)
+		zero2.read_ch8(verbose=True)
+		zero2.correct_nlin() 
+		#print(zero2.ephases)
+		#print(zero2.dark_det_mjds)
+		if zero1.fname is not None:
 
-        #
-        # if we have a complete orbit window then get all the readouts that belong to the actual orbit
-        #
+			#
+			# if we have a complete orbit window then get all the readouts that belong to the actual orbit
+			#
 
-        #print("zero1 fname:", zero1.fname)
-        #print(zero1.ephases)
-        #print(zero1.dark_det_mjds)
-        ephases = np.concatenate((zero1.ephases, zero2.ephases))
-        readouts = np.concatenate((zero1.readouts, zero2.readouts))
-        states = np.concatenate((zero1.dark_state_ids, zero2.dark_state_ids))
-        orbits = np.trunc(ephases) 
-        idx = orbits == orbit
-        ephases = ephases[idx]
-        readouts = readouts[idx,:]
-        states = states[idx]
-        wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, dbname_long)
-        
-        #
-        # compute and store noise for each exposure time
-        #
+			orbit = zero1.get_orbit()
+			#print("zero1 fname:", zero1.fname)
+			#print(zero1.ephases)
+			#print(zero1.dark_det_mjds)
+			#print(zero1.ephases, zero2.ephases)
+			ephases = np.concatenate((zero1.ephases, zero2.ephases))
+			readouts = np.concatenate((zero1.readouts, zero2.readouts))
+			states = np.concatenate((zero1.dark_state_ids, zero2.dark_state_ids))
+			orbits = np.trunc(ephases) 
+			idx = orbits == orbit
+			print(ephases.shape, orbits.shape, idx.shape)
+			print(ephases, orbits, idx)
+			ephases = ephases[idx]
+			print(readouts.shape, readouts[600:700,:])
+			readouts = readouts[idx,:]
+			states = states[idx]
+			wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, dbname_long)
+			wave_phases = np.mod(wave_phases, 1)
 
-        for exp_time in exp_times:
+			#
+			# compute and store noise for each exposure time (TODO: separate function?)
+			#
 
-            # create output group
-            grp = fout["pet"+str(exp_time)]
+			for exp_time in exp_times:
 
-            stateid = get_darkstateid(exp_time, orbit)
-            idx = states == stateid
-            ephases_ = np.mod(ephases[idx],1)
-            readouts_ = readouts[idx,:]
-    
-            #
-            # subtract dark signal to remove any form of trend
-            #
+				#print("exp_time=", exp_time)
 
-            i_phase = 0
-            for phase in ephases_:  # TODO phase interpolation
-                ephase_idx = argmin(np.abs(phase - ephases_))
-                readouts_[i_phase,:] -= wave[ephase_idx,:] + wave_ao
-                i_phase += 1
+				#
+				# open output group and its datasets
+				#
 
-            #
-            # compute noise figures
-            #
+				grp = fout["pet"+str(exp_time)]
+				orbit_dset = grp["orbit"]
+				noise_dset = grp["noise"]
 
-            # TODO: are we using floats here?? check!
-            noise = readouts_.std(axis=0)
-            # TODO: median abs dev?
-            # TODO: also compute mean to verify there is no bias? 
+				#
+				# get all readouts for the state id that matches the exposure time
+				#
 
-            #
-            # store noise figures
-            #
+				stateid = get_darkstateid(exp_time, orbit)
+				idx = states == stateid
+				ephases_ = np.mod(ephases[idx],1)
+				readouts_ = np.array(readouts[idx,:], dtype=np.float64)
 
-            #noise_dset = h5py.create_dataset(grp, (,), "noise")
+				#
+				# subtract dark signal to remove any form of trend
+				#
 
-        # prepare for next orbit
-	    zero1 = zero2
+				# i_phase = 0
+				# #print(ephases_, wave_phases)
+				# for phase in ephases_:  # TODO phase interpolation
+				# 	ephase_idx = np.argmin(np.abs(phase - wave_phases))
+				# 	#print('wave',wave.shape,'ao',wave_ao.shape,'readouts_',readouts_.shape)
+				# 	#print('wave[]',wave[ephase_idx,:].shape,'ao',wave_ao.shape,'readouts_[]',readouts_[i_phase,:].shape)
+				# 	#print(type(readouts_), type(wave), type(wave_ao))
+				# 	#print(ephase_idx)
+				# 	#print(i_phase)
+				# 	readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+				# 	i_phase += 1
 
-    fout.close()
+				#
+				# compute noise figures
+				#
+
+				# TODO: are we using floats here?? check!
+				noise = readouts_.std(axis=0)
+				# TODO: median abs dev?
+				# TODO: also compute mean to verify there is no bias? 
+
+				#
+				# store noise figures
+				#
+
+				#print(noise)
+				#print(readouts)
+				saveNoise(orbit, exp_time, noise)
+
+		# prepare for next orbit
+		zero1 = zero2
+
+	fout.close()
 

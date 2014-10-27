@@ -42,6 +42,8 @@ pixranges = [numpy.arange(1024), \
             ]
 # exposure time error
 petcorr = 1.18125e-3
+# nr of pixels per channel
+n_chanpix = 1024
 
 mask_criteria = ['combined','RTS','darkCurrentError','darkCurrentSat','invalid','residual']
 
@@ -280,6 +282,7 @@ class OrbitRangeError(Exception):
 
 # for given pet and absolute orbit number, return the the right dark state id
 def get_darkstateid(pet, orbit):
+    orbit = int(orbit)
     if orbit >= 1572 and orbit < 43362:
         if pet == 2:
             return 67
@@ -308,7 +311,7 @@ def get_darkstateid(pet, orbit):
             raise PetNotFoundError("pet not present after orbit 43362")
     else:
         # very early orbit?
-        raise OrbitRangeError("unknown orbit range")        
+        raise OrbitRangeError("orbit "+str(orbit)+" out of range")
 
 # reads extracted state executions from database
 def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
