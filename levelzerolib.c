@@ -27,6 +27,8 @@ bool File_Is_Open = false;
 /*+++++ Static Variables +++++*/
 static const char err_msg[] = "invalid number of function arguments";
 
+//#define DEBUG
+
 /*+++++++++++++++++++++++++ Static Functions +++++++++++++++++++++++*/
 static inline
 void UNPACK_LV0_PIXEL_VAL( const struct chan_src *pixel,
@@ -209,14 +211,16 @@ int _SCIA_LV0_RD_AUX ( struct mds0_info *info, unsigned int num_info, struct mds
      return -1;
 }
 
-int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned char chan_mask, struct mds0_det *C_det, unsigned int *data)
+int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned char chan_mask, struct mds0_det *C_det, unsigned int *data, double *mjds, uint8_t *coadds, uint8_t *stateids)
 {
     const char prognm[] = "_SCIA_LV0_RD_DET";
-    register unsigned int n_ch, n_cl;
+    unsigned int n_ch, n_cl;
     unsigned int  num_clus;
-    register unsigned int nr = 0;
-    register unsigned int offs = 0;
+    unsigned int nr = 0;
+    unsigned int offs = 0;
+    unsigned int last_offs = 0;
     unsigned int sz_data = 0;
+    unsigned int nrec_out = 0;
 
     if ( fileno( fd_nadc ) == -1 ) 
     {
@@ -226,16 +230,16 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
     struct det_src *tmp_buf = malloc(10*sizeof(struct det_src));
 
     nadc_stat = NADC_STAT_SUCCESS;
-    //printf("bla\n");
     for ( nr = 0; nr < num_det; nr++, C_det++ ) 
     {
+#ifdef DEBUG
         printf("nr=%d\n", nr);
+#endif
 
         for ( n_cl = 0; n_cl < (unsigned int) info[nr].numClusters; n_cl++ )
             sz_data += info[nr].cluster[n_cl].length;
 
         C_det->data_src = tmp_buf;
-        //C_det->data_src = malloc(10*sizeof(struct det_src));
         SCIA_LV0_RD_DET( fd_nadc, info+nr, 1, chan_mask, &C_det );
 
         if ( IS_ERR_STAT_FATAL ) 
@@ -243,15 +247,21 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
             fprintf(stderr, "fatal!\n");
             return -1;
         }
- 
+
+#ifdef DEBUG
+        printf("nr=%d, nchan=%d\n", nr, C_det->num_chan); 
+#endif
         for ( n_ch = 0; n_ch < C_det->num_chan; n_ch++ ) 
         {
             num_clus = C_det->data_src[n_ch].hdr.channel.field.clusters ;
+#ifdef DEBUG
             printf("n_ch=%d, num_clus=%d\n", n_ch, num_clus);
-
+#endif
             for ( n_cl = 0; n_cl < num_clus; n_cl++ ) 
             {
+#ifdef DEBUG
                 printf("offs=%d\n", offs);
+#endif
                 if ( (offs+C_det->data_src[n_ch].pixel[n_cl].length) > sz_data ) 
                 {
                     fprintf(stderr, "size?!\n");
@@ -259,11 +269,37 @@ int _SCIA_LV0_RD_DET (struct mds0_info *info, unsigned int num_det, unsigned cha
                 }
                 UNPACK_LV0_PIXEL_VAL( &C_det->data_src[n_ch].pixel[n_cl], data+offs );
                 offs += C_det->data_src[n_ch].pixel[n_cl].length;
-            }
+            } // cluster loop
+
+        } // channel loop
+
+        if (offs - last_offs == 1024)
+        {
+            // convert mjd struct to floating point, also add the bcps to get the real time of the readout
+            struct mjd_envi isp = C_det->isp;
+            uint16_t bcps = C_det->bcps;
+            mjds[nrec_out] = isp.days + (isp.secnd + (isp.musec/1000000.) + (bcps/16.))/(3600*24.);
+
+            // get the coadding factor
+            int nclusters = info[nr].numClusters;
+            coadds[nrec_out] = info[nr].cluster[nclusters-2].coAdding;
+            stateids[nrec_out] = info[nr].stateID;
+
+#if DEBUG
+            int nn;
+            for (nn=0; nn<nclusters; nn++)
+                printf("%d ", info[nr].cluster[nn].coAdding);
+            printf("\n");
+            printf("nrec_out=%d, mjd=%f, coadd=%d, stateid=%d\n", nrec_out, mjds[nrec_out], coadds[nrec_out], stateids[nrec_out]);
+#endif
+
+            nrec_out++;
         }
-    }
+
+        last_offs = offs;
+    } // det packet loop
     free(tmp_buf);
-    return num_det;
+    return nrec_out;
  done:
     return -1;
 }

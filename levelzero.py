@@ -659,10 +659,18 @@ class LevelZeroFile:
 		for field_name, field_type in pmtc_hdr._fields_:
 			print(field_name, getattr(pmtc_hdr, field_name))
 
+	def get_coadd(self, info):
+		#info_clus = getattr(info, "info_clus")
+		info_clus = info.info_clus
+		num_clus = info.numClusters
+		print(num_clus)
+		return getattr(info_clus[38], "coAdding")
+
 	# output:
 	# self.readouts: ch8 detector readouts (1024xN float32)
 	# self.dark_det_mjds: MJD2000 (float64) of readouts
 	def read_ch8(self, verbose=False):
+
 		#
 		# open
 		#
@@ -742,85 +750,64 @@ class LevelZeroFile:
 		#
 
 		chan_mask = 1<<(8-1) # channel 8
+
 		det_array_type = mds0_det * n_dark_det
 		self.dark_det = det_array_type()
 
 		det_data_type = c_uint * (1024*n_dark_det)
 		self.det_data = det_data_type()
 
-		ret = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(n_dark_det), c_byte(chan_mask), byref(self.dark_det), self.det_data)
-		if ret != n_dark_det:
+		mjds_type = c_double * n_dark_det
+		mjds = mjds_type()
+
+		coadds_type = c_ubyte * n_dark_det
+		coadds = coadds_type()
+
+		stateids_type = c_ubyte * n_dark_det
+		stateids = stateids_type()
+
+		n_readouts = self.lib._SCIA_LV0_RD_DET(byref(info_dark_det_), c_uint(n_dark_det), c_byte(chan_mask), byref(self.dark_det), self.det_data, mjds, coadds, stateids)
+		if n_readouts < 0:
 			raise Exception("_SCIA_LV0_RD_DET failed! ret="+str(ret))
 
-		for i in range(n_dark_det):
-			self.print_det(i)
+		#
+		# now get rid of useless packets and shrink data buffer
+		#
 
-		# print some data as a test
-		#self.det_data_ = np.empty((1024, n_dark_det), dtype=np.float32)
-		#self.det_data_[:,:] = self.det_data[:]
+		# turn into 2d numpy array and shrink
 		self.readouts = np.frombuffer(self.det_data, dtype=np.uint32).reshape((n_dark_det, 1024))
-		print(self.readouts.shape)
-		# print(self.det_data[1024:2048])
-		# print(self.readouts[1,:])
-		# print(len(info_dark_det))
-		# self.print_det(100)
-		# print()
+		#print("TEST", self.readouts[600,0])
+		self.readouts = np.array(self.readouts[0:n_readouts, :], dtype=np.float64)
+		#print("shape=", self.readouts.shape, "self.readouts=", self.readouts)
 
 		#
-		# convert all detector mjds to something we can use in numpy
+		# convert all readout metadata to numpy arrays
 		#
 
-		self.dark_det_mjds = np.empty((n_dark_det), dtype=np.float64)
-		# self.dark_det_mjds_ = np.empty((n_dark_det), dtype=np.float64)
-		for i in range(n_dark_det):
-			det = self.dark_det[i]
-			isp = getattr(det, "isp")
-			self.dark_det_mjds[i] = convert_mjd_struct_to_float(isp)
-			# fep = getattr(det, "fep_hdr") 
-			# gsrt = getattr(fep, "gsrt") # ground station reception time.. we don't need that
-			# self.dark_det_mjds_[i] = convert_mjd_struct_to_float(gsrt)
-			bcps = getattr(det, "bcps")
-			self.dark_det_mjds[i] += bcps / (16.*3600*24)
-
+		self.mjds = np.array(mjds[0:n_readouts], dtype=np.float64)
+		self.stateids = np.array(stateids[0:n_readouts], dtype=np.byte)
+		self.coadds = np.array(coadds[0:n_readouts], dtype=np.byte)
 		if verbose:
-			print(n_dark_det)
-			print("my very own mjds:", self.dark_det_mjds)
-
-		#
-		# extract the list of state id's
-		#
-
-		self.dark_state_ids = np.empty((n_dark_det), dtype=np.byte)
-		for i in range(n_dark_det):
-			self.dark_state_ids[i] = getattr(info_dark_det[i], "stateID")
+			print("my very own mjds:", self.mjds)
 
 		#
 		# convert mjd's to eclipse orbit phase
 		#
 
-		phases, orbits = self.pc.get_phase(self.dark_det_mjds, eclipseMode=True, getOrbits=True)
+		phases, orbits = self.pc.get_phase(self.mjds, eclipseMode=True, getOrbits=True)
 		self.ephases = orbits + phases
 		if verbose:
 			print("my very own ephases:", self.ephases)
-
-		# debog
-
-		# for i in range(n_dark_det):
-		# 	print(self.dark_det_mjds[i], self.dark_state_ids[i])
 
 		#
 		# read aux data using aux info packets (really not necessary in this case, but ok.)
 		#
 
-		aux_data_type = mds0_aux * len(info_dark_aux)
-		self.dark_aux = aux_data_type()
-		ret = self.lib._SCIA_LV0_RD_AUX(byref(info_dark_aux_), c_uint(len(info_dark_aux)), self.dark_aux)
-		if ret != len(info_dark_aux):
-			raise Exception("_SCIA_LV0_RD_AUX failed!")
-
-		# print()
-		# self.print_aux(0)
-		# print()
+		# aux_data_type = mds0_aux * len(info_dark_aux)
+		# self.dark_aux = aux_data_type()
+		# ret = self.lib._SCIA_LV0_RD_AUX(byref(info_dark_aux_), c_uint(len(info_dark_aux)), self.dark_aux)
+		# if ret != len(info_dark_aux):
+		# 	raise Exception("_SCIA_LV0_RD_AUX failed!")
 
 		#
 		# close
@@ -830,9 +817,18 @@ class LevelZeroFile:
 		if ret < 0:
 			raise Exception("couldn't close file. return code = "+str(ret))
 
-        def correct_nlin(self):
-            self.readouts = self.nlc.correct_ch8(self.readouts)
-            self.corrected = True
+	# correct nonlinearity
+	def correct_nlin(self):
+		self.readouts = self.nlc.correct_ch8(self.readouts)
+		self.corrected = True
+
+	# correct for coadding
+	def divide_coadd(self):
+		n_readouts = self.readouts.shape[0]
+#		print(len(self.coadds))
+		for i in range(n_readouts):
+			self.readouts[i,:] /= self.coadds[i] 
+			#print(self.readouts[i,:])
 
 def test_orbit_from_fname(fname):
 	l0 = LevelZeroFile()
@@ -862,13 +858,17 @@ if __name__ == "__main__":
 	from vardark_module import load_varkdark_orbit
 	from sciamachy_module import get_darkstateid, petcorr, n_chanpix
 	import envisat
+	import warnings
+	warnings.simplefilter("error")
 
 	n_pix = n_chanpix
 	dbname_long = "/SCIA/SDMF31/pieter/vardark_long.h5"
 
-	orbit_range = [44000,44002]
-#	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
-	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=P"
+	orbit_range = [10000,10002]
+	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
+#	orbit_range = [44000,44002]
+#	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=P"
+
 	text_list = subprocess.check_output(cmd, shell=True)
 	fnames = text_list.splitlines()
 
@@ -890,7 +890,8 @@ if __name__ == "__main__":
 		zero2 = LevelZeroFile()
 		print(fname)
 		zero2.set_file(fname)
-		zero2.read_ch8(verbose=True)
+		zero2.read_ch8(verbose=False)
+		zero2.divide_coadd()
 		zero2.correct_nlin() 
 		#print(zero2.ephases)
 		#print(zero2.dark_det_mjds)
@@ -907,13 +908,13 @@ if __name__ == "__main__":
 			#print(zero1.ephases, zero2.ephases)
 			ephases = np.concatenate((zero1.ephases, zero2.ephases))
 			readouts = np.concatenate((zero1.readouts, zero2.readouts))
-			states = np.concatenate((zero1.dark_state_ids, zero2.dark_state_ids))
+			states = np.concatenate((zero1.stateids, zero2.stateids))
 			orbits = np.trunc(ephases) 
 			idx = orbits == orbit
-			print(ephases.shape, orbits.shape, idx.shape)
-			print(ephases, orbits, idx)
+			#print(ephases.shape, orbits.shape, idx.shape)
+			#print(ephases, orbits, idx)
 			ephases = ephases[idx]
-			print(readouts.shape, readouts[600:700,:])
+			# print(readouts.shape, readouts[600:700,:])
 			readouts = readouts[idx,:]
 			states = states[idx]
 			wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, dbname_long)
@@ -948,24 +949,25 @@ if __name__ == "__main__":
 				# subtract dark signal to remove any form of trend
 				#
 
-				# i_phase = 0
-				# #print(ephases_, wave_phases)
-				# for phase in ephases_:  # TODO phase interpolation
-				# 	ephase_idx = np.argmin(np.abs(phase - wave_phases))
-				# 	#print('wave',wave.shape,'ao',wave_ao.shape,'readouts_',readouts_.shape)
-				# 	#print('wave[]',wave[ephase_idx,:].shape,'ao',wave_ao.shape,'readouts_[]',readouts_[i_phase,:].shape)
-				# 	#print(type(readouts_), type(wave), type(wave_ao))
-				# 	#print(ephase_idx)
-				# 	#print(i_phase)
-				# 	readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
-				# 	i_phase += 1
+				i_phase = 0
+				#print(ephases_, wave_phases)
+				for phase in ephases_:  # TODO phase interpolation
+					ephase_idx = np.argmin(np.abs(phase - wave_phases))
+					#print('wave',wave.shape,'ao',wave_ao.shape,'readouts_',readouts_.shape)
+					#print('wave[]',wave[ephase_idx,:].shape,'ao',wave_ao.shape,'readouts_[]',readouts_[i_phase,:].shape)
+					#print(type(readouts_), type(wave), type(wave_ao))
+					#print(ephase_idx)
+					#print(i_phase)
+					readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+					i_phase += 1
+				print("CORRECTED READOUTS", readouts_)
 
 				#
 				# compute noise figures
 				#
 
-				# TODO: are we using floats here?? check!
 				noise = readouts_.std(axis=0)
+				print("NOISE", noise)
 				# TODO: median abs dev?
 				# TODO: also compute mean to verify there is no bias? 
 
@@ -973,8 +975,8 @@ if __name__ == "__main__":
 				# store noise figures
 				#
 
-				#print(noise)
-				#print(readouts)
+				#print("noise=", noise)
+				#print("readouts=", readouts)
 				saveNoise(orbit, exp_time, noise)
 
 		# prepare for next orbit
