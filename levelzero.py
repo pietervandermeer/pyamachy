@@ -855,16 +855,20 @@ def saveNoise(orbit, exp_time, noise):
 
 if __name__ == "__main__":
 	import subprocess
+	import matplotlib.pyplot as plt
+	import warnings
+	warnings.simplefilter("error") # warnings to errors
+	#np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+
 	from vardark_module import load_varkdark_orbit
 	from sciamachy_module import get_darkstateid, petcorr, n_chanpix
+	import matplotlib.pyplot as plt
 	import envisat
-	import warnings
-	warnings.simplefilter("error")
 
 	n_pix = n_chanpix
 	dbname_long = "/SCIA/SDMF31/pieter/vardark_long.h5"
 
-	orbit_range = [10000,10002]
+	orbit_range = [10003,10010]
 	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
 #	orbit_range = [44000,44002]
 #	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=P"
@@ -926,7 +930,7 @@ if __name__ == "__main__":
 
 			for exp_time in exp_times:
 
-				#print("exp_time=", exp_time)
+				print("exp_time=", exp_time)
 
 				#
 				# open output group and its datasets
@@ -950,24 +954,57 @@ if __name__ == "__main__":
 				#
 
 				i_phase = 0
-				#print(ephases_, wave_phases)
 				for phase in ephases_:  # TODO phase interpolation
 					ephase_idx = np.argmin(np.abs(phase - wave_phases))
-					#print('wave',wave.shape,'ao',wave_ao.shape,'readouts_',readouts_.shape)
-					#print('wave[]',wave[ephase_idx,:].shape,'ao',wave_ao.shape,'readouts_[]',readouts_[i_phase,:].shape)
-					#print(type(readouts_), type(wave), type(wave_ao))
-					#print(ephase_idx)
-					#print(i_phase)
-					readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+					diffs = (phase - wave_phases) * 50
+					lephase_idx = np.where((diffs >= 0.) & (diffs <= 1.))[0]
+					if lephase_idx.size == 0:
+						lephase_idx = ephase_idx
+						frac = 0
+					elif lephase_idx.size > 1:
+						lephase_idx = lephase_idx[0]
+						frac = diffs[lephase_idx]
+					else:
+						frac = diffs[lephase_idx]
+					interp_wave = frac*wave[lephase_idx+1,:] + (1-frac)*wave[lephase_idx,:]
+					interp_wave = interp_wave.flatten()
+					# 0 order
+#					readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+					# linear interpolation
+					readouts_[i_phase,:] -= interp_wave*(exp_time-petcorr) + wave_ao.reshape((n_pix))
 					i_phase += 1
-				print("CORRECTED READOUTS", readouts_)
+
+				if (exp_time == 1.0):
+					pixnr=115
+					plt.cla()
+					plt.plot(ephases_, readouts_[:,pixnr], 'bo', label='corr readouts')
+					plt.plot([0,.25], [0,0], label='0')
+					ranges = [[0,.10],[.11,.17],[.18,.24]]
+					stds = np.empty((3))
+					cents = np.empty((3))
+					mds = np.empty((3))
+					i = 0
+					for rng in ranges:
+						idx = (ephases_ > rng[0]) & (ephases_ < rng[1])
+						mn = np.mean(readouts_[idx,pixnr])
+						md = np.median(readouts_[idx,pixnr])
+						mds[i] = md
+						stds[i] = np.std(readouts_[idx,pixnr]) / np.sqrt(np.sum(idx))
+						cents[i] = np.mean(ephases_[idx])
+						#plt.plot([rng[0],rng[1]], [mn,mn], label='mean '+str(rng[0]))
+						#plt.plot([rng[0],rng[1]], [md,md], label='median '+str(rng[0]))
+						i+=1
+					plt.errorbar(cents, mds, stds, fmt='ro', ls='none', label='median,sig-mu')
+					plt.legend(loc='best')
+					plt.show()
+				#print()
 
 				#
 				# compute noise figures
 				#
 
 				noise = readouts_.std(axis=0)
-				print("NOISE", noise)
+				#print("NOISE", noise)
 				# TODO: median abs dev?
 				# TODO: also compute mean to verify there is no bias? 
 
@@ -983,4 +1020,3 @@ if __name__ == "__main__":
 		zero1 = zero2
 
 	fout.close()
-
