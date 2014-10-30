@@ -645,20 +645,36 @@ class VarDarkDb:
         else:
             self.create(vd)
 
-def load_varkdark_orbit(orbit, db_name):
-    fid = h5py.File(db_name, 'r', libver='latest' )
-    #n_pix = vardark.numPixels
-    phase_dset = fid["orbitPhase"]
-    orbit_dset = fid["orbit"]
-    wave_dset = fid["wave"]
+def load_varkdark_orbit(orbit, shortMode):
+    basename = "vardark"
+    if shortMode:
+        fname = basename+"_short.h5"
+    else:
+        fname = basename+"_long.h5"
+    fid = h5py.File(fname, "r")
+    orbit_dset = fid["dim_orbit"]
     idx_fid = orbit_dset[:] == orbit
-    idx_ph_fid = np.trunc(phase_dset[:]) == orbit
+    if np.sum(idx_fid) == 0:
+        raise Exception("no thermal background found for orbit "+str(orbit)+"!")
+    therm_dset = fid["varDark"]
+    thermal_background = therm_dset[idx_fid,:,:]
+    phases = fid["dim_phase"][:] + orbit
+    fid.close()
 
-    fin = h5py.File("interpolated_monthlies.h5", "r")
+    basename = "interpolated_monthlies"
+    if shortMode:
+        fname = basename+"_short.h5"
+    else:
+        fname = basename+"_long.h5"
+    fin = h5py.File(fname, "r")
     in_orbitlist = fin["orbits"]
     idx_fin = in_orbitlist[:] == orbit
+    if np.sum(idx_fin) == 0:
+        raise Exception("no analog offset data found for orbit "+str(orbit)+"!")
+    analog_offset = fin['aos'][idx_fin,:]
+    fin.close()
 
-    return phase_dset[idx_ph_fid], orbit_dset[idx_fid], wave_dset[idx_ph_fid,:], fin['aos'][idx_fin,:]
+    return phases, orbit, thermal_background, analog_offset
 
 #- main ------------------------------------------------------------------------
 

@@ -867,7 +867,7 @@ if __name__ == "__main__":
 	n_pix = n_chanpix
 	dbname_long = "/SCIA/SDMF31/pieter/vardark_long.h5"
 
-	orbit_range = [10003,10010]
+	orbit_range = [10000,10010]
 	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=O"
 #	orbit_range = [44000,44002]
 #	cmd = "inquire_scia_db.py --orbit="+str(orbit_range[0])+","+str(orbit_range[1])+" --level=0 --proc=P"
@@ -920,7 +920,7 @@ if __name__ == "__main__":
 			# print(readouts.shape, readouts[600:700,:])
 			readouts = readouts[idx,:]
 			states = states[idx]
-			wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, dbname_long)
+			wave_phases, wave_orbit, wave, wave_ao = load_varkdark_orbit(orbit, False)
 			wave_phases = np.mod(wave_phases, 1)
 
 			#
@@ -965,7 +965,7 @@ if __name__ == "__main__":
 						frac = diffs[lephase_idx]
 					else:
 						frac = diffs[lephase_idx]
-					interp_wave = frac*wave[lephase_idx+1,:] + (1-frac)*wave[lephase_idx,:]
+					interp_wave = frac*wave[0,lephase_idx+1,:] + (1-frac)*wave[0,lephase_idx,:]
 					interp_wave = interp_wave.flatten()
 					# 0 order
 #					readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
