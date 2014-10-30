@@ -7,6 +7,7 @@ import envisat
 import argparse
 from argparse import ArgumentParser, ArgumentTypeError
 import re
+
 from vardark_module import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 from scipy.interpolate import interp1d
@@ -43,7 +44,7 @@ def parseOrbitList(str):
         return v1
 
 def saveWave(orbit, phi, wave_seg):
-    idx = np.where(orbit_dset == orbit)
+    idx = np.where(orbit_dset[:] == orbit)
     if idx[0].size > 0:
         # replace
         orbit_dset[idx] = orbit
@@ -112,8 +113,18 @@ print("output_fname=", fname)
 pixnr = args.pixnr
 print("pixnr=", pixnr)
 
+#
+# prerequisite is the interpolated monthlies database, either load it or create it on the spot
+#
+
+interpm_dbname = "interpolated_monthlies.h5"
+
+if not h5py.is_hdf5(interpm_dbname):
+    print(interpm_dbname+" does not yet exist, creating...")
+    interpolate_monthlies(interpm_dbname)
+
 # get orbit range from interpolated monthlies input or from command line?
-fin = h5py.File("interpolated_monthlies.h5", "r")
+fin = h5py.File(interpm_dbname, "r")
 in_orblist = fin["orbits"]
 if args.orbitrange is None:
     last_orbit = np.max(in_orblist)

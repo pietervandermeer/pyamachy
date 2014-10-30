@@ -862,7 +862,6 @@ if __name__ == "__main__":
 
 	from vardark_module import load_varkdark_orbit
 	from sciamachy_module import get_darkstateid, petcorr, n_chanpix
-	import matplotlib.pyplot as plt
 	import envisat
 
 	n_pix = n_chanpix
