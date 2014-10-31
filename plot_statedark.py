@@ -53,10 +53,10 @@ print(data['DarkSignal'].shape)
 colors = ['b','g','r','c','m','y','k','w']
 
 for i in range((data['DarkSignal']).shape[2]):
-	vals = (data['DarkSignal'])[:,pix,i]
-	print(vals)
-	hor_axis = numpy.arange(vals.shape[0])
-	#print(hor_axis.shape)
-	plot(hor_axis, vals, color=colors[i%8])
+    vals = (data['DarkSignal'])[:,pix,i]
+    print(vals)
+    hor_axis = numpy.arange(vals.shape[0])
+    #print(hor_axis.shape)
+    plot(hor_axis, vals, color=colors[i%8])
 
 savefig('test.png', dpi=100)
