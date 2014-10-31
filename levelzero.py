@@ -910,6 +910,7 @@ if __name__ == "__main__":
 			#print(zero1.dark_det_mjds)
 			#print(zero1.ephases, zero2.ephases)
 			ephases = np.concatenate((zero1.ephases, zero2.ephases))
+			mjds = np.concatenate((zero1.mjds, zero2.mjds))
 			readouts = np.concatenate((zero1.readouts, zero2.readouts))
 			states = np.concatenate((zero1.stateids, zero2.stateids))
 			orbits = np.trunc(ephases) 
@@ -917,6 +918,7 @@ if __name__ == "__main__":
 			#print(ephases.shape, orbits.shape, idx.shape)
 			#print(ephases, orbits, idx)
 			ephases = ephases[idx]
+            mjds = mjds[idx]
 			# print(readouts.shape, readouts[600:700,:])
 			readouts = readouts[idx,:]
 			states = states[idx]
@@ -946,6 +948,7 @@ if __name__ == "__main__":
 				stateid = get_darkstateid(exp_time, orbit)
 				idx = states == stateid
 				ephases_ = np.mod(ephases[idx],1)
+                mjds_ = mjds[idx]
 				readouts_ = np.array(readouts[idx,:], dtype=np.float64)
 
 				#
@@ -974,27 +977,30 @@ if __name__ == "__main__":
 					i_phase += 1
 
 				if (exp_time == 1.0):
-					pixnr=115
+				    pixnr=115
 					plt.cla()
-					plt.plot(ephases_, readouts_[:,pixnr], 'bo', label='corr readouts')
-					plt.plot([0,.25], [0,0], label='0')
-					ranges = [[0,.10],[.11,.17],[.18,.24]]
-					stds = np.empty((3))
-					cents = np.empty((3))
-					mds = np.empty((3))
-					i = 0
-					for rng in ranges:
-						idx = (ephases_ > rng[0]) & (ephases_ < rng[1])
-						mn = np.mean(readouts_[idx,pixnr])
-						md = np.median(readouts_[idx,pixnr])
-						mds[i] = md
-						stds[i] = np.std(readouts_[idx,pixnr]) / np.sqrt(np.sum(idx))
-						cents[i] = np.mean(ephases_[idx])
-						#plt.plot([rng[0],rng[1]], [mn,mn], label='mean '+str(rng[0]))
-						#plt.plot([rng[0],rng[1]], [md,md], label='median '+str(rng[0]))
-						i+=1
-					plt.errorbar(cents, mds, stds, fmt='ro', ls='none', label='median,sig-mu')
-					plt.legend(loc='best')
+                    if True:
+                        plt.plot(mjds_, readouts[:,pixnr], 'bo', 'corr readouts')
+                    else:
+					    plt.plot(ephases_, readouts_[:,pixnr], 'bo', label='corr readouts')
+					    plt.plot([0,.25], [0,0], label='0')
+					    ranges = [[0,.10],[.11,.17],[.18,.24]]
+					    stds = np.empty((3))
+					    cents = np.empty((3))
+					    mds = np.empty((3))
+					    i = 0
+					    for rng in ranges:
+						    idx = (ephases_ > rng[0]) & (ephases_ < rng[1])
+						    mn = np.mean(readouts_[idx,pixnr])
+						    md = np.median(readouts_[idx,pixnr])
+						    mds[i] = md
+						    stds[i] = np.std(readouts_[idx,pixnr]) / np.sqrt(np.sum(idx))
+						    cents[i] = np.mean(ephases_[idx])
+						    #plt.plot([rng[0],rng[1]], [mn,mn], label='mean '+str(rng[0]))
+						    #plt.plot([rng[0],rng[1]], [md,md], label='median '+str(rng[0]))
+						    i+=1
+					    plt.errorbar(cents, mds, stds, fmt='ro', ls='none', label='median,sig-mu')
+					    plt.legend(loc='best')
 					plt.show()
 				#print()
 
