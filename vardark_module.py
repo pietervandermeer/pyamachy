@@ -197,9 +197,12 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
 
     return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
 
-# fit dark model to an orbits with normal (eclipse) dark states
-# use parameters computed from nearest calibration orbits
-def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, verbose=False, **kwargs):
+def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, 
+                      give_errors=False, verbose=False, **kwargs):
+    """
+    fit dark model to an orbits with normal (eclipse) dark states
+    use parameters computed from nearest calibration orbits
+    """
 
     orbit_range = orbit, orbit+2
     #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
@@ -210,10 +213,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     #
 
     x = ephases-orbit, pet #, coadd
-    #print(all_state_phases.shape)
-    #print(pet.shape)
-    #print(pet)
-    #print(coadd.shape)
+
     #fitobj = kmpfit.Fitter(residuals=scia_dark_residuals1, data=(x, all_readouts[:,pixnr], all_sigmas[:,pixnr]))
     
     aoinfo = dict(fixed=True, limits=[0,10000])
@@ -232,16 +232,16 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     res_lcs = numpy.empty(n_pix)
     res_trends[:] = numpy.nan
     res_lcs[:] = numpy.nan
+    err_trends = numpy.empty(n_pix)
+    err_lcs = numpy.empty(n_pix)
+    err_trends[:] = numpy.nan
+    err_lcs[:] = numpy.nan
     for pixnr in range(n_pix):
-        #print(pixnr)
         # prepare initial parameters
         p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        #print('readouts = ', pix_readouts)
-        #print('sigmas = ', pix_sigmas)
-        #print(numpy.sum(pix_sigmas))
         if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)):
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
@@ -252,14 +252,18 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             print(pixnr, fitobj.message)
         statuses[pixnr] = fitobj.status
         res_lcs[pixnr] = fitobj.params[1]
+        err_lcs[pixnr] = fitobj.stderr[1]
         res_trends[pixnr] = fitobj.params[3]
+        err_trends[pixnr] = fitobj.stderr[3]
         if (fitobj.status <= 0):
-           #print('Error message = ', fitobj.message)
-           quit()
+           raise Exception(fitobj.message)
         #else:
         #   print("Optimal parameters: ", fitobj.params)
 
-    return x, res_lcs, res_trends, all_readouts, all_sigmas
+    if give_errors:
+        return x, res_lcs, res_trends, err_lcs, err_trends, all_readouts, all_sigmas
+    else:
+        return x, res_lcs, res_trends, all_readouts, all_sigmas
 
 def read_ch8_darks(orbit_range, stateid):
     states = read_extracted_states_(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)

@@ -1,17 +1,23 @@
 # -*- coding: iso-8859-1 -*-
-# module containing pixelmask class.
+# module containing pixel quality class.
+
+from __future__ import print_function, division
+
 import ConfigParser
+import numpy as np
 import numpy
 import matplotlib.pyplot as plt
 import h5py
 import logging
 import datetime
+import warnings
+warnings.simplefilter("error") # warnings to errors
+numpy.set_printoptions(threshold=numpy.nan, precision=4, suppress=True, linewidth=np.nan)
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
+from vardark_module import load_varkdark_orbit
 
-# class that handles pixelmask computation. should be a 1:1 copy of the SDMF 3.1
-# IDL code.
 class PixelQuality:
 
     def __init__(self):
@@ -31,12 +37,13 @@ class PixelQuality:
         # Parse config file, exit if unsuccessful
         #
         
-        cfg_file = open('default3.1.cfg')
+        fname = 'default3.2.cfg'
+        cfg_file = open(fname)
         try:
             self.cfg = self.get_config(cfg_file)
         except ConfigParser.NoOptionError, ex:
             msg = "There was a missing option in the configuration file '"
-            logging.exception(msg+'default3.1.cfg!')
+            logging.exception(msg+fname)
             raise
 
         clussizes1 = [       \
@@ -84,13 +91,21 @@ class PixelQuality:
             if i >= 7: 
                 channelindex = range1k + (i-1)*self.numpixels
 
-            self.errorlc_thres[channelindex]    = (self.cfg['dc_err_thres'])[i]
-            self.residual_thres[channelindex]   = (self.cfg['res_thres'])[i]
-            self.exposuretime_max[channelindex] = (self.cfg['dc_sat_time'])[i]
-            self.sig_max[channelindex]          = (self.cfg['max_signal'])[i]
-
-    # load configuration from file
     def get_config(self, config_file):
+        """ 
+        load configuration from file 
+
+        Parameters
+        ----------
+
+        config_file : string
+            name of the configuration file
+
+        Returns
+        -------
+        get_config : dict
+            contains all relevant configuration settings as readily-usable types (int, boolean, float, arrays instead of strings)
+        """
         import string
 
         parser=ConfigParser.SafeConfigParser()
@@ -104,6 +119,7 @@ class PixelQuality:
         dict['statedarkch8_fname'] = parser.get('Global','statedarkch8_file')
         dict['darklimbch6_fname'] = parser.get('Global','darklimbch6_file')
         dict['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
+        dict['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
         string = parser.get('Processor','dc_sat_time')
         dict['dc_sat_time'] = [float(s) for s in string.split(',')]
         string = parser.get('Processor','dc_err_thres')
@@ -114,26 +130,40 @@ class PixelQuality:
         dict['max_signal'] = [float(s) for s in string.split(',')]
         string = parser.get('Processor','deadflaggingstates')
         dict['deadflaggingstates'] = [int(s) for s in string.split(',')]
+        dict['w_err'] = float(parser.get('Processor','w_err'))
+        dict['w_res'] = float(parser.get('Processor','w_res'))
+        dict['w_noise'] = float(parser.get('Processor','w_noise'))
         return dict
 
-    # perform the actual pixel mask computation
-    def calculate(self, orbit, test=None):
+    def calculate(self, orbit):
+        """ 
+        perform the quality computation for specified orbit
+
+        Parameters
+        ----------
+
+        orbit : int
+            absolute orbit number
+        """
         
+        #
+        # get variables from configuration and user arguments
+        #
+
+        w_err = self.cfg['w_err']
+        w_res = self.cfg['w_res']
+        w_noise = self.cfg['w_noise']
         self.orbit = orbit
         darkids = self.cfg['deadflaggingstates']
 
         #
-        # load dark fit
+        # load vardark
         #
 
-        fdark = h5py.File(self.cfg['db_dir']+self.cfg['dark_fname'], 'r')
-        gdark = fdark['DarkFit']
-        darkcurrent_dset  = gdark["darkCurrent"]
-        darkcurrenterror_dset  = gdark["darkCurrentError"]
-        analogoffset_dset = gdark["analogOffset"]
-        darkcurrent      = darkcurrent_dset[orbit-1,:]
-        darkcurrenterror = darkcurrenterror_dset[orbit-1,:]
-        analogoffset     = analogoffset_dset[orbit-1,:]
+        wave_phases, wave_orbit, darkcurrent, analogoffset = load_varkdark_orbit(orbit, False)
+        # slice out a single phase, this is good enough for our purposes
+        darkcurrent = darkcurrent[0,0,:].flatten()
+        analogoffset = analogoffset.flatten()
 
         #
         # load dark state data (noise/readout for residual)
@@ -151,8 +181,8 @@ class PixelQuality:
             orbitlist = gextract["orbitList"]
             idx = numpy.where(orbitlist[:] == orbit)
             if idx[0].size == 0:
-                logging.warning("oh noes, no dark data for orbit %d!" % orbit)
-                return
+                logging.warning("no dark data for orbit %d!" % orbit)
+                invalid_mask[:] = True
             readoutnoise[state_string] = readoutnoise_dset[idx[0],:]
             readoutmean[state_string] = readoutmean_dset[idx[0],:]
 
@@ -182,69 +212,20 @@ class PixelQuality:
         self.readoutpet = readoutpet
 
         #
-        # correct limits in case of OCR43 darks, to keep pixelmasks similar to 
-        # pre-OCR43 days.
-        # different for every Epitaxx channel: ch6+ seems to deviate from ch8. 
-        # ch7, which suffers from light leakage and for which the pixelmask has 
-        # never been properly defined, is wildly different since OCR43. since 
-        # nobody uses ch7, i'll try to adapt bad pixel count to pre-OCR43 
-        # levels, but not meticulously. 
-        #
-
-        if orbit >= 43362:
-            residual_thres[6*1024:7*1024-1]  *= .75
-            exposuretime_max[6*1024:7*1024-1] *= 1.33
-            errorlc_thres[6*1024:7*1024-1] *= .4
-            # ch6+
-            residual_thres[5*1024+795:6*1024-1] *= .2
-
-        #
         # check invalid data points in the dark current calculation
         # if the values are 0, the pixel can not be corrected and is 
         # therefore unusable
         #
 
-        invalid = (analogoffset == 0) | (darkcurrent == 0)
-
-        #
-        # Check for violation of the absolute dark current values
-        # These are expressed as a positive and negative saturation time
-        # For negative dark currents the threshold defines that the pixel is 
-        # not allowed to saturate the adc at adc=0
-        # so from the analog offset towards zero within a certain time
-        # For positive dark currents to pixel is not supposed to saturate the 
-        # adc from analog offset to its maximum value within a certain exposure 
-        # time
-        #
-        # uses: maxadc: max ADC read-out (BU)
-        #       maxsig: max signal per channel excluding AO and LC. over the 
-        #               sahara, BU/s
-        # TODO: this is wrong. you use the exposure time from the non-equator states, with signal values from the equator states.. 
-        # you need to use signal values from the non-equator states. 
-        # in practice this would mean 58000 BU/s limit instead of 55000 BU/s (i guess!)
-
-        maxadc     = 65535
-        lowlc      = - analogoffset / self.exposuretime_max
-        highlc     = (maxadc-analogoffset)/self.exposuretime_max - self.sig_max
-        darkcursat = (darkcurrent < lowlc) | (darkcurrent > highlc)
-
-        #
-        # Check for violation of the derived dark current error
-        # The error in these parameters is not allowed to exceed a certain 
-        # fraction of the parameter itself
-        #
-
-        #idx = numpy.where(darkcurrent > 0) # probably div-by-0 in here
-        #print idx
-        darkerrorfrac = abs(darkcurrenterror / darkcurrent) # TODO: store this
-        dc_err_mask = darkerrorfrac > self.errorlc_thres
+        invalid_mask = (analogoffset == 0) | (np.isnan(analogoffset)) | (darkcurrent == 0) | (np.isnan(darkcurrent))
 
         #
         # check whether the darkcurrent residuals exceed their error
         #
 
         numdark = len(darkids)
-        tmp     = numpy.zeros(self.pixelcount, dtype=bool)
+        tmp     = np.zeros(self.numpixels, dtype=np.float64)
+        tmp_count = np.zeros(self.numpixels, dtype=np.float64)
         for darkid in darkids:
             state_string = "State_"+format(darkid, "02d")
 
@@ -252,69 +233,61 @@ class PixelQuality:
             # correct dark measurements with dark fit (sounds way too funny)
             #
             
-            pets = readoutpet[state_string]
-            corrmean  = readoutmean[state_string] 
+            pets = readoutpet[state_string][7*1024:8*1024]
+            corrmean = readoutmean[state_string][:,7*1024:8*1024] 
             corrmean -= darkcurrent * pets + analogoffset
-            corrnoise = readoutnoise[state_string]
+            corrnoise = readoutnoise[state_string][:,7*1024:8*1024]
+            #print(corrmean)
+            print(corrmean.shape, corrnoise.shape, pets.shape, darkcurrent.shape, analogoffset.shape)
 
             i_row = 0
             for meanrow in corrmean:
-                noiserow = corrnoise[i_row]
+                noiserow = corrnoise[i_row,:]
                 #phase = correcteddata[index[j]].phase
                 #if phase > 0.0 and phase < 0.3:
-                goodnoise=numpy.where(noiserow > 0)
+                print(noiserow.shape)
+                noiserow = np.nan_to_num(noiserow)
+                goodnoise = noiserow > 0
                 # if there are invalid noise figures, generate an error!
-                if goodnoise[0].size == 0:
-                    print 'invalid noise(=0) in residual criterion!'
-                    return
-                tmp = tmp | (abs(meanrow / noiserow) > self.residual_thres)
+                if np.sum(goodnoise) == 0:
+                    logging.warning('invalid noise(=0) in residual criterion!')
+                    invalid_mask[:] = True
+                print(goodnoise.shape, meanrow)
+                tmp[goodnoise] += abs(meanrow[goodnoise] / noiserow[goodnoise])
+                tmp_count += goodnoise
                 i_row+=1
                 
-        residual = tmp
+        residual_figure = tmp
 
         #
-        # compute RTS mask
-        #
-        
-        rts = numpy.zeros(self.pixelcount)
-        rts6 = numpy.zeros(self.numpixels)
-        rts8 = numpy.zeros(self.numpixels)
-        rts6 = self.calculate_rts_rank(orbit, channel=6, pieter_flagging=True, 
-            christian_flagging=False, eclipse_flagging=True)
-        rts8 = self.calculate_rts_rank(orbit, channel=8, pieter_flagging=True, 
-            christian_flagging=False, eclipse_flagging=True)
-        rts[5*1024:6*1024] = rts6
-        rts[7*1024:8*1024] = rts8
-        
-        #
-        # combine the masks using logical OR
+        # compute dark current error to darkcurrent ratio
         #
 
-        combined = (rts > 0) | darkcursat | invalid | dc_err_mask | residual
-        
-        self.rts_mask = rts
-        self.combined_mask = numpy.array(combined, dtype='=u1')
-        self.darkcursat_mask = numpy.array(darkcursat, dtype='=u1')
-        self.dc_err_mask = numpy.array(dc_err_mask, dtype='=u1')
-        self.residual_mask = numpy.array(residual, dtype='=u1')
-        self.invalid_mask = numpy.array(invalid, dtype='=u1')
+        dc_err_figure = np.abs(darkcurrenterror / darkcurrent)
 
-        
-    # creates a new mask array in the database
-    def create_dbmaskarray(self, f, name, orbit):
-        print "creating "+name
+        #
+        # combine the criteria using a weighted sum 
+        #
+
+        self.combined = (w_err*dc_err_figure + w_res*residual_figure + w_noise*noise_figure) * (not invalid_mask)
+
+        return        
+
+    def create_figure_dset(self, f, name, orbit):
+        """ creates a new mask array in the database """
+        print("creating "+name)
         dims = (self.maxorbits,self.pixelcount)
         if (orbit < 1) or (orbit > self.maxorbits):
             raise ValueError('orbit %d out of range [1,%d]' %
                              (orbit,self.maxorbits))
-        dtype = numpy.dtype('=u1')
+        dtype = numpy.float64
         dat = numpy.zeros(dims, dtype=dtype)
-        f.create_dataset(name, dims, dtype=dtype, chunks=(16,self.pixelcount), 
+        f.create_dataset(name, dims, dtype=dtype, chunks=(16,self.numpixels), 
                          compression='gzip', compression_opts=3, 
                          maxshape=[None,self.pixelcount], data=dat)
 
-    # write data for this orbit to database
     def write(self):
+        """ write data for this orbit to database """
         
         orbit = self.orbit
         meta_dtype = numpy.dtype([('absOrbit', '=u4'), ('entryDate', '=S20')])
@@ -328,21 +301,19 @@ class PixelQuality:
         try:
             open(db_fname)
         except IOError as e:
-            print "creating db "+db_fname+"..."
+            print("creating db "+db_fname+"...")
             f = h5py.File(db_fname,'w')
-            print 'creating metaTable'
+            print('creating metaTable')
             metadata = numpy.empty((self.maxorbits), dtype=meta_dtype)
             f.create_dataset("metaTable", (self.maxorbits,), dtype=meta_dtype, 
                              chunks=(1024,), compression='gzip', 
                              compression_opts=3, maxshape=None, data=metadata)
-            self.create_dbmaskarray(f, "RTS", orbit)
-            self.create_dbmaskarray(f, "combined", orbit)
-            self.create_dbmaskarray(f, "darkCurrentError", orbit)
-            self.create_dbmaskarray(f, "darkCurrentSat", orbit)
-            self.create_dbmaskarray(f, "residual", orbit)
-            self.create_dbmaskarray(f, "invalid", orbit)
+            self.create_figure_dset(f, "darkError", orbit)
+            self.create_figure_dset(f, "darkResidual", orbit)
+            self.create_figure_dset(f, "noise", orbit)
+            self.create_figure_dset(f, "combined", orbit)
             f.close()
-            print 'created db'
+            print('created db')
 
         #
         # modify record in database
@@ -373,36 +344,43 @@ class PixelQuality:
             
             f.close()
         else:
-            logging.error("failed to open database %s" % db_fname)
+            logging.exception("failed to open database %s" % db_fname)
+            raise
 
-    #
-    # PURPOSE:
-    #       generate pixelmasks for specified orbit list and channel
-    #
-    # INPUT:
-    #       orbit_list: 1D array of orbits
-    #
-    # RETURNS:
-    #       combined RTS mask
-    #
-    # KEYWORDS:
-    #       channel: input, scalar, integer : 6 or 8, 6 implies channel 6+
-    #        default = 6
-    #       test: set this to plot bar graph instead of writing to db.
-    #       pieter_flagging: set this to use time domain flagging, "pieter" style 
-    #       christian_flagging: set this to use time domain flagging, "christian" 
-    #        style 
-    #       timedomain_flagging: set this to use both pieter and christian flagging
-    #       eclipse_flagging: set this to use histogram eclipse data  
-    #
-    # NOTES: 
-    #       - time domain flagging is very strict
-    #       - eclipse flagging involves 3 orbits (!) because this is required to get
-    #       decent statistics. this is probably a bit too strict. 
-    #
     def calculate_rts_rank(self, orbit, channel=6, test=False, 
-        pieter_flagging=True, christian_flagging=False, 
-        timedomain_flagging=False, eclipse_flagging=False):
+                           pieter_flagging=True, christian_flagging=False, 
+                           timedomain_flagging=False, eclipse_flagging=False):
+        """
+        generate pixelmasks for specified orbit list and channel
+        
+        Parameters
+        ----------
+        orbit : int
+            absolute orbit number
+        channel : int, optional
+            6 or 8, 6 implies channel 6+, default = 6
+        test : boolean, optional
+            set this to plot bar graph instead of writing to db.
+        pieter_flagging: boolean, optional
+            set this to use time domain flagging, "pieter" style 
+        christian_flagging: boolean, optional
+            set this to use time domain flagging, "christian" style 
+        timedomain_flagging: boolean, optional
+            set this to use both pieter and christian flagging
+        eclipse_flagging: boolean, optional
+            set this to use histogram eclipse data  
+        
+        Returns
+        -------
+        combined RTS mask
+        
+        
+        Notes
+        ----- 
+        - time domain flagging is very strict
+        - eclipse flagging involves 3 orbits (!) because this is required to get
+          decent statistics. this is probably a bit too strict. 
+        """
 
         #
         # handle user arguments
@@ -426,7 +404,7 @@ class PixelQuality:
 
         # TODO: exception? or not?
         if status < 0:
-            print 'error calling sdmf_read_statedark_!'
+            print('error calling sdmf_read_statedark_!')
             return
 
         ec_npeaks = data['Npeaks']
@@ -441,7 +419,7 @@ class PixelQuality:
         #print 'ec_orbits=', ec_orbits
 
         if test:
-            print 'got eclipse rts data'
+            print('got eclipse rts data')
 
         #
         # load dark limb data
@@ -457,7 +435,7 @@ class PixelQuality:
         #print data
         status = data['status']
         if status < 0:
-            print 'error calling sdmf_read_rts_darklimb_record ['+str(status)+']!'
+            print('error calling sdmf_read_rts_darklimb_record ['+str(status)+']!')
             return
 
         dl_rtslevel = data['rtslevel']
@@ -467,7 +445,7 @@ class PixelQuality:
         jumpratios = data['jumpratios']
 
         if test:
-            print 'got darklimb rts data'
+            print('got darklimb rts data')
 
         #
         # process 2D arrays (orbits x pixels)
@@ -564,19 +542,12 @@ class PixelQuality:
 #- main code -------------------------------------------------------------------
 
 if __name__ == '__main__':
-    print "Pixelmask unit test:"
-    p = Pixelmask()
-    orbit = 14000
-    print "initialised."
+    print("Pixelmask unit test:")
+    p = PixelQuality()
+    orbit = 10000
+    print("initialised.")
     p.calculate(orbit)
-    print "orbit %d computed" % orbit
-    print "good pixel fractions per criterion for channel 8, orbit %d:" % orbit
-    print "combined", numpy.mean(p.combined_mask[7*1024:8*1024-1])
-    print "darkcurrent saturation", \
-          numpy.mean(p.darkcursat_mask[7*1024:8*1024-1])
-    print "darkcurrent error", numpy.mean(p.dc_err_mask[7*1024:8*1024-1])
-    print "residual", numpy.mean(p.residual_mask[7*1024:8*1024-1])
-    print "invalid", numpy.mean(p.invalid_mask[7*1024:8*1024-1])
-    print "RTS", numpy.mean(p.rts_mask[7*1024:8*1024-1] > 0)
+    print("orbit %d computed" % orbit)
     p.write()
-    print "Pixel mask data for orbit %d written to db." % orbit
+    print("Pixel mask data for orbit %d written to db." % orbit)
+

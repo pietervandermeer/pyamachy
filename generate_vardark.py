@@ -71,7 +71,28 @@ class VarDarkdb:
             np.string_("SCIA variable dark signal of channel 8")
         self.ds_vdark = dset
 
-    def __init__( self, h5_name, sz_phase=50, sz_channel=1024 ):
+        self.ds_err_lcs = self.fid.create_dataset("errorLCs", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
+        self.ds_err_trends = self.fid.create_dataset("errorTrends", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
+
+        return
+
+    def open(self, h5_name, sz_phase=50, sz_channel=1024):
+        self.h5_name = np.string_(h5_name)
+
+        # TODO: check if this matches the existing db's dimensions
+        self.channel_sz = sz_channel
+        self.phase_sz = sz_phase
+
+        self.fid = h5py.File(h5_name, "r+")
+        self.ds_orbit = self.fid["dim_orbit"]
+        self.ds_vdark = self.fid["varDark"]
+        self.ds_err_lcs = self.fid["errorLCs"]
+        self.ds_err_trends = self.fid["errorTrends"]
+        self.n_write = self.ds_orbit.size
+
+        return
+
+    def __init__( self, h5_name, **kwargs):
 
         #
         # create if database doesn't exist 
@@ -85,16 +106,9 @@ class VarDarkdb:
         # otherwise just open existing
         #
 
-        self.h5_name = np.string_(h5_name)
+        self.open(h5_name, **kwargs)
 
-        # TODO: check if this matches the existing db's dimensions
-        self.channel_sz = sz_channel
-        self.phase_sz = sz_phase
-
-        self.fid = h5py.File(h5_name, "r+")
-        self.ds_orbit = self.fid["dim_orbit"]
-        self.ds_vdark = self.fid["varDark"]
-        self.n_write = self.ds_orbit.size
+        return
 
     def new_entry( self, orbit ):
         '''
@@ -106,7 +120,7 @@ class VarDarkdb:
         else:
             return True
 
-    def replace( self, orbit, vdark ):
+    def replace(self, orbit, vdark, err_trends=None, err_lcs=None):
         '''
         Replace variable dark values in database
         '''
@@ -114,8 +128,12 @@ class VarDarkdb:
         print(self.ds_orbit[:], orbit, indx)
         if indx[0].size > 0:
             self.ds_vdark[indx,:,:] = vdark
+            if err_trends is not None:
+                self.ds_err_trends[indx,:] = err_trends
+            if err_lcs is not None:
+                self.ds_err_lcs[indx,:] = err_lcs
 
-    def append( self, orbit, vdark ):
+    def append(self, orbit, vdark, err_trends=None, err_lcs=None):
         '''
         Append new variable dark values in database
         '''
@@ -123,6 +141,13 @@ class VarDarkdb:
         self.ds_orbit[self.n_write] = orbit
         self.ds_vdark.resize( self.n_write+1, axis=0 )
         self.ds_vdark[self.n_write,:,:] = vdark
+        if err_trends is not None:
+            self.ds_err_trends.resize( self.n_write+1, axis=0 )
+            print(err_trends.shape)
+            self.ds_err_trends[self.n_write,:] = err_trends
+        if err_lcs is not None:
+            self.ds_err_lcs.resize( self.n_write+1, axis=0 )
+            self.ds_err_lcs[self.n_write,:] = err_lcs
         self.n_write += 1
 
     def close( self ):
@@ -151,12 +176,24 @@ def parseOrbitList(str):
 def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None, useTrendFit=True):
     '''
     generate vardark product for specified orbits and from specified input database.
-    vddb: VarDarkdb object
-    ad: AllDarks object (contains dark data for specified orbit range)
-    input_dbname: name of interpolated monthlies database
-    [first_orbit, last_orbit]: orbit range
-    pixnr: optional parameter [0..1023]. if set will plot a pixel of choice instead of output data to database
-    useTrendFit: flag to set more precise fit of daily variation trending 
+
+    Parameters
+    ----------
+
+    vddb : VarDarkdb object
+        used to store the data as hdf5
+    ad : AllDarks object 
+        contains dark data for specified orbit range
+    input_dbname : string
+        name of interpolated monthlies database
+    first_orbit : int 
+        first orbit in orbit range
+    last_orbit] : int 
+        last orbit in orbit range
+    pixnr : int, optional 
+        [0..1023]. if not None will plot a pixel of choice instead of output data to database
+    useTrendFit : boolean, optional
+        flag to set more precise fit of daily variation trending
     '''
 
     #
@@ -263,17 +300,26 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     n_tpts = len(orbrange)
     trending_phis = np.empty(n_tpts)
     trending_ys = np.empty([n_tpts, n_pix])
+    err_lcs = np.empty([n_tpts, n_pix])
+    err_trends = np.empty([n_tpts, n_pix])
 
     for orbit in orbrange:
         #print(orbit)
         if useTrendFit:
-            # slower, but more accurate
+            # use least-means fit to find lc and trend. slower, but more accurate. 
+            # this works because all parameters are now fixed except lc and trend. 
             aos = inter_aos[i_orbit,:]
             amps = inter_amps[i_orbit,:]
             channel_phase1 = inter_phases[i_orbit,0]
             channel_phase2 = inter_phases[i_orbit,1]
             channel_amp2 = inter_amp2[i_orbit]
-            x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
+
+            #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
+            list_ = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True)
+            x__, lcs_, res_trends, err_lcs_, err_trends_, dum1, dum2 = list_
+            err_lcs[i_trend, :] = err_lcs_
+            err_trends[i_trend, :] = err_trends_
+
             for i_pix in range(n_pix):
                 p = aos[i_pix], lcs_[i_pix], amps[i_pix], res_trends[i_pix], channel_phase1, channel_amp2, channel_phase2
                 trending_ys[i_trend, i_pix] = scia_dark_fun2m(p, xt)
@@ -339,6 +385,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     full_wave = np.empty(xnew.size)
     out_orblist = np.array([], dtype=np.int32)
 
+    i = 0
     for orbit in range(int(ximin), int(ximax)):
         out_orblist = np.append(out_orblist, orbit)
         print(orbit)
@@ -361,9 +408,16 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ 
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
             if vddb.new_entry(orbit):
-                vddb.append(orbit, wave)
+                if useTrendFit:
+                    vddb.append(orbit, wave, err_trends=err_trends[i,:], err_lcs=err_lcs[i,:])
+                else:
+                    vddb.append(orbit, wave)
             else:
-                vddb.replace(orbit, wave)
+                if useTrendFit:
+                    vddb.replace(orbit, wave, err_trends=err_trends[i,:], err_lcs=err_lcs[i,:])
+                else:
+                    vddb.append(orbit, wave)
+        i += 1
 
     fin.close() # close interpolated monthlies databse, won't be needing it anymore
     print("done.")

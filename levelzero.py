@@ -851,6 +851,55 @@ def saveNoise(orbit, exp_time, noise):
         ax1 = noise_dset.len()
         noise_dset.resize(ax1+1, axis=0)
 
+def median_absolute_deviation(a, axis=None):
+    """Compute the median absolute deviation.
+
+    Returns the median absolute deviation (MAD) of the array elements.
+    The MAD is defined as ``median(abs(a - median(a)))``.
+
+    Parameters
+    ----------
+    a : array_like
+        Input array or object that can be converted to an array.
+    axis : int, optional
+        Axis along which the medians are computed. The default (axis=None)
+        is to compute the median along a flattened version of the array.
+
+    Returns
+    -------
+    median_absolute_deviation : ndarray
+        A new array holding the result. If the input contains
+        integers, or floats of smaller precision than 64, then the output
+        data-type is float64.  Otherwise, the output data-type is the same
+        as that of the input.
+
+    Examples
+    --------
+
+    This will generate random variates from a Gaussian distribution and return
+    the median absolute deviation for that distribution::
+
+        >>> from astropy.stats import median_absolute_deviation
+        >>> from numpy.random import randn
+        >>> randvar = randn(10000)
+        >>> mad = median_absolute_deviation(randvar)
+
+    See Also
+    --------
+    numpy.median
+
+    """
+
+    a = np.array(a, copy=False)
+    a_median = np.median(a, axis=axis)
+
+    # re-broadcast the output median array to subtract it
+    if axis is not None:
+        a_median = np.expand_dims(a_median, axis=axis)
+
+    # calculated the median average deviation
+    return np.median(np.abs(a - a_median), axis=axis)
+
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -950,12 +999,14 @@ if __name__ == "__main__":
                 ephases_ = np.mod(ephases[idx],1)
                 mjds_ = mjds[idx]
                 readouts_ = np.array(readouts[idx,:], dtype=np.float64)
+                readouts_org = readouts_ + 0.0
 
                 #
                 # subtract dark signal to remove any form of trend
                 #
 
                 i_phase = 0
+                pixnr=620
                 for phase in ephases_:  # TODO phase interpolation
                     ephase_idx = np.argmin(np.abs(phase - wave_phases))
                     diffs = (phase - wave_phases) * 50
@@ -971,22 +1022,24 @@ if __name__ == "__main__":
                     interp_wave = frac*wave[0,lephase_idx+1,:] + (1-frac)*wave[0,lephase_idx,:]
                     interp_wave = interp_wave.flatten()
                     # 0 order
-#                   readouts_[i_phase,:] -= wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+#                   corr = wave[ephase_idx,:]*(exp_time-petcorr) + wave_ao.reshape((n_pix))
                     # linear interpolation
-                    readouts_[i_phase,:] -= interp_wave*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+                    corr = interp_wave*(exp_time-petcorr) + wave_ao.reshape((n_pix))
+                    readouts_[i_phase,:] -= corr
+                    print(corr[pixnr])
                     i_phase += 1
 
                 if (exp_time == 1.0):
-                    pixnr=115
                     plt.cla()
                     plt.ticklabel_format(useOffset=False)
-                    if True:
+                    if False:
                         plt.plot(mjds_, readouts_[:,pixnr], 'bo', label='corr readouts')
                     else:
                         plt.plot(ephases_, readouts_[:,pixnr], 'bo', label='corr readouts')
                         plt.plot([0,.25], [0,0], label='0')
                         ranges = [[0,.10],[.11,.17],[.18,.24]]
                         stds = np.empty((3))
+                        stds_org = np.empty((3))
                         cents = np.empty((3))
                         mds = np.empty((3))
                         i = 0
@@ -995,12 +1048,14 @@ if __name__ == "__main__":
                             mn = np.mean(readouts_[idx,pixnr])
                             md = np.median(readouts_[idx,pixnr])
                             mds[i] = md
-                            stds[i] = np.std(readouts_[idx,pixnr]) / np.sqrt(np.sum(idx))
+                            stds[i] = median_absolute_deviation(readouts_[idx,pixnr]) / np.sqrt(np.sum(idx))
+                            stds_org[i] = median_absolute_deviation(readouts_org[idx,pixnr]) / np.sqrt(np.sum(idx))
                             cents[i] = np.mean(ephases_[idx])
                             #plt.plot([rng[0],rng[1]], [mn,mn], label='mean '+str(rng[0]))
                             #plt.plot([rng[0],rng[1]], [md,md], label='median '+str(rng[0]))
                             i+=1
                         plt.errorbar(cents, mds, stds, fmt='ro', ls='none', label='median,sig-mu')
+                        plt.errorbar(cents, mds, stds_org, fmt='go', ls='none', label='median,sig-mu')
                         plt.legend(loc='best')
                     plt.show()
                 #print()
