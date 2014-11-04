@@ -236,13 +236,16 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     err_lcs = numpy.empty(n_pix)
     err_trends[:] = numpy.nan
     err_lcs[:] = numpy.nan
+    uncertainty = numpy.empty(n_pix)
+    uncertainty[:] = numpy.nan
     for pixnr in range(n_pix):
         # prepare initial parameters
         p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
-
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)):
+        if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)) and (x[0].size > 0):
+            #print(orbit, pixnr, x)
+            print(orbit, pixnr, p0, parinfo)
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
@@ -257,11 +260,12 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         err_trends[pixnr] = fitobj.stderr[3]
         if (fitobj.status <= 0):
            raise Exception(fitobj.message)
+        uncertainty[pixnr] = np.std(scia_dark_fun2(fitobj.params, x) - pix_readouts)
         #else:
         #   print("Optimal parameters: ", fitobj.params)
 
     if give_errors:
-        return x, res_lcs, res_trends, err_lcs, err_trends, all_readouts, all_sigmas
+        return x, res_lcs, res_trends, err_lcs, err_trends, all_readouts, all_sigmas, uncertainty
     else:
         return x, res_lcs, res_trends, all_readouts, all_sigmas
 

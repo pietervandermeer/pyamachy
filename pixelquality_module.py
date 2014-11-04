@@ -208,7 +208,6 @@ class PixelQuality:
             
             readoutpet[state_string] = pets
             
-
         self.readoutpet = readoutpet
 
         #
