@@ -1,6 +1,16 @@
 from __future__ import print_function, division
 
-import cPickle as pickle # python 2 speed-up
+"""
+generate a simple noise product from sdmf readout noise.
+the use of this generator is the fact that level 0 data are not always sliced equally for each orbit. 
+instead of containing 15 dark executions they may contain 10 and the next 20.
+this leads to variation from orbit to orbit.
+this generator overcomes this by taking all data belonging to the right orbit (using eclipse definition).
+the product also takes into account the changed dark definition (OCR-43) @ orbit 43362:
+it will always have the right noise figure for the Pixel Exposure Time (PET) of choice.
+"""
+
+#import cPickle as pickle # python 2 speed-up
 import pickle
 import numpy as np 
 import h5py
@@ -27,6 +37,11 @@ class Noise:
 
     # extract noise data from sdmf_extract_calib database
     def extract(self, orbit_range):
+
+        #
+        # read data
+        #
+
         if orbit_range[0] < 43362 and orbit_range[1] >= 43362:
             pre_ocr43_sid = get_darkstateid(self.pet, 43361)
             post_ocr43_sid = get_darkstateid(self.pet, 43362)
@@ -49,14 +64,34 @@ class Noise:
             self.count = d['readoutCount'][:]
             self.mjds = d['mtbl'][:]['julianDay']
             self.noise = d['readoutNoise'][:,:]
-        ephases, self.orbits = self.pc.get_phase(self.mjds, getOrbits=True)
+
+        #
+        # deduplicate if necessary (shouldn't be)
+        #
+
+        # self.mjds, idx = np.unique(self.mjds, return_index=True)
+        # print(idx)
+        # self.count = self.count[idx]
+        # self.noise = self.noise[idx]
+
+        #
+        # convert mjd to orbit to get reliable orbit numbers based on eclipse phase
+        #
+
+        ephases, self.orbits = self.pc.get_phase(self.mjds, eclipseMode=True, getOrbits=True)
+        self.orbits += ephases # phase can be outside of range [0..1], so add to orbit and truncate back to int to get the real orbit nrs!
+        self.orbits.view('int32')
+
+        return
 
     # averages noise figures so that they are per orbit
     def finalize(self):
         # sort.. to group state executions by orbit
-        idx = np.argsort(self.orbits)
+        idx = np.argsort(self.mjds)
+        self.mjds = self.mjds[idx]
         self.orbits = self.orbits[idx]
         self.noise = self.noise[idx,:]
+        self.count = self.count[idx,:]
 
         #
         # average the noise figure for each orbit
@@ -66,19 +101,22 @@ class Noise:
         firsts = np.nonzero(np.diff(self.orbits))[0] + 1
         firsts = np.insert(firsts, 0, 0)
         diffs = np.diff(firsts)
-        counts = np.insert(diffs, -1, self.orbits.size - firsts[-1])
+        exec_counts = np.insert(diffs, -1, self.orbits.size - firsts[-1])
 
-        # create output array (where all groups are collapsed into single columns)
-        n_orbits = counts.size
+        # create output array (where all orbits are collapsed into single columns)
+        n_orbits = exec_counts.size
         noise_out = np.empty([n_orbits, n_pix])
+        self.meas_count = np.empty([n_orbits, n_pix])
 
         # average each orbit
         for i in range(n_orbits):
-            count = counts[i]
+            count = exec_counts[i]
             first = firsts[i]
             sdev = self.noise[first:first+count, :]  # stddev
-            count = np.sum(self.count[first:first+count, :], axis=0)  # total count of all measurements
-            noise_out[i,:] = np.sqrt(np.mean(np.square(sdev), axis=0) / count) # root(mean_square / count) -> error in the mean
+            meas_count = np.sum(self.count[first:first+count], axis=0)  # total count of all measurements for this orbit
+            self.meas_count[i,:] = meas_count # store total measurement count for this orbit
+            #noise_out[i,:] = np.sqrt(np.mean(np.square(sdev), axis=0) / meas_count) # root(mean_square / count) -> error in the mean
+            noise_out[i,:] = np.sqrt(np.mean(np.square(sdev), axis=0)) # average stddev (RMS)
 
         self.noise = noise_out
 
@@ -90,6 +128,8 @@ class Noise:
         grpn = self.get_groupname()
         n_dset = f.create_dataset(grpn+"/noise", self.noise.shape, dtype='f')
         n_dset[:,:] = self.noise
+        c_dset = f.create_dataset(grpn+"/count", self.meas_count.shape, dtype='i')
+        c_dset[:,:] = self.meas_count
         o_dset = f.create_dataset(grpn+"/orbits", self.orbits.shape, dtype='i')
         o_dset[:] = self.orbits
         f.close()
@@ -131,6 +171,7 @@ if __name__ == '__main__':
     import timeit
 
     orbit_range = [3300,53300]
+#    orbit_range = [30000,31000]
     db_fname = "noise.h5"
 
     # NOTE: entire db will get truncated!

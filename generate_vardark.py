@@ -73,6 +73,8 @@ class VarDarkdb:
 
         self.ds_err_lcs = self.fid.create_dataset("errorLCs", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
         self.ds_err_trends = self.fid.create_dataset("errorTrends", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
+        self.ds_datapoint_counts = self.fid.create_dataset("dataPointCounts", (0,), maxshape=(None,), dtype=np.int16)
+        self.ds_uncertainties = self.fid.create_dataset("uncertainties", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
 
         return
 
@@ -95,6 +97,8 @@ class VarDarkdb:
             self.ds_vdark = self.fid["varDark"]
             self.ds_err_lcs = self.fid["errorLCs"]
             self.ds_err_trends = self.fid["errorTrends"]
+            self.ds_datapoint_counts = self.fid["dataPointCounts"]
+            self.ds_uncertainties = self.fid["uncertainties"]
         except KeyError:
             raise Exception("unable to open one or more datasets in "+h5_name)
 
@@ -136,20 +140,26 @@ class VarDarkdb:
         else:
             return True
 
-    def replace(self, orbit, vdark, err_trends=None, err_lcs=None):
+    def replace(self, orbit, vdark, err_trends=None, err_lcs=None, datapoint_count=None, uncertainties=None):
         '''
         Replace variable dark values in database
         '''
-        indx = np.argwhere(self.ds_orbit[:] == orbit)
-        print(self.ds_orbit[:], orbit, indx)
-        if indx[0].size > 0:
-            self.ds_vdark[indx,:,:] = vdark
-            if err_trends is not None:
-                self.ds_err_trends[indx,:] = err_trends
-            if err_lcs is not None:
-                self.ds_err_lcs[indx,:] = err_lcs
+        boolindex = self.ds_orbit[:] == orbit
+        indx = np.argwhere(boolindex)
+        if indx[0].size == 0:
+            return
 
-    def append(self, orbit, vdark, err_trends=None, err_lcs=None):
+        self.ds_vdark[indx,:,:] = vdark
+        if err_trends is not None:
+            self.ds_err_trends[indx,:] = err_trends
+        if err_lcs is not None:
+            self.ds_err_lcs[indx,:] = err_lcs
+        if datapoint_count is not None:
+            self.ds_datapoint_counts[indx[0][0]] = datapoint_count
+        if uncertainties is not None:
+            self.ds_uncertainties[indx,:] = uncertainties
+
+    def append(self, orbit, vdark, err_trends=None, err_lcs=None, datapoint_count=None, uncertainties=None):
         '''
         Append new variable dark values in database
         '''
@@ -163,6 +173,12 @@ class VarDarkdb:
         if err_lcs is not None:
             self.ds_err_lcs.resize( self.n_write+1, axis=0 )
             self.ds_err_lcs[self.n_write,:] = err_lcs
+        if datapoint_count is not None:
+            self.ds_datapoint_counts.resize((self.n_write+1,))
+            self.ds_datapoint_counts[self.n_write] = datapoint_count
+        if uncertainties is not None:
+            self.ds_uncertainties.resize( self.n_write+1, axis=0 )
+            self.ds_uncertainties[self.n_write,:] = uncertainties
         self.n_write += 1
 
     def close( self ):
@@ -208,8 +224,10 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     pixnr : int, optional 
         [0..1023]. if not None will plot a pixel of choice instead of output data to database
     useTrendFit : boolean, optional
-        flag to set more precise fit of daily variation trending
+        flag that replaces simple trending procedure by fit (more accurate, but also more costly)
     """
+
+    import logging
 
     #
     # open interpolated monthlies
@@ -217,6 +235,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     fin = h5py.File(input_dbname, "r")
     in_orblist = fin["orbits"]
+    n_orbits_in = in_orblist.size
     inter_aos = fin["aos"]
     inter_amps = fin["amps"]
     inter_phases = fin["phases"]
@@ -333,10 +352,14 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     lcs = np.ones(n_pix) * 5000 # initial guess for thermal background signal. 5000 BU/s is a good average
     orbrange = range(int(np.min(ephases)), int(np.max(ephases)))
     n_tpts = len(orbrange)
+    # TODO: put phi, orbit, y, err_lc, err_trend, uncertainties into dict.. otherwise stoo much of a hassle when sorting or filteringm
     trending_phis = np.empty(n_tpts)
+    trending_orbits = np.empty(n_tpts)
     trending_ys = np.empty([n_tpts, n_pix])
     err_lcs = np.empty([n_tpts, n_pix])
     err_trends = np.empty([n_tpts, n_pix])
+    datapoint_count = np.empty([n_orbits_in]) # may be used for quality estimation (2 or less datapoints will make a fit impossible, even)
+    uncertainties = np.empty([n_tpts, n_pix])
 
     for orbit in orbrange:
         print(orbit)
@@ -349,26 +372,30 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             channel_phase2 = inter_phases[i_orbit,1]
             channel_amp2 = inter_amp2[i_orbit]
 
-            # debug
-            #if i_orbit >= 1130:
-            #    print(aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
-            #aos[0] = 10000
+            try:
+                #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
+                list_ = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True, verbose=False)
+                x__, lcs_, res_trends, err_lcs_, err_trends_, dum1, dum2, uncertainty = list_
+                err_lcs[i_trend, :] = err_lcs_
+                err_trends[i_trend, :] = err_trends_
 
-            #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
-            list_ = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True)
-            x__, lcs_, res_trends, err_lcs_, err_trends_, dum1, dum2, uncertainty = list_
-            err_lcs[i_trend, :] = err_lcs_
-            err_trends[i_trend, :] = err_trends_
-
-            for i_pix in range(n_pix):
-                p = aos[i_pix], lcs_[i_pix], amps[i_pix], res_trends[i_pix], channel_phase1, channel_amp2, channel_phase2
-                trending_ys[i_trend, i_pix] = scia_dark_fun2m(p, xt)
-            avg_phi += trending_phase
-            trending_phis[i_trend] = trending_phase+orbit
-            i_trend += 1
+                datapoint_count[i_orbit] = x__[0].size
+                uncertainties[i_trend,:] = uncertainty
+                for i_pix in range(n_pix):
+                    p = aos[i_pix], lcs_[i_pix], amps[i_pix], res_trends[i_pix], channel_phase1, channel_amp2, channel_phase2
+                    trending_ys[i_trend, i_pix] = scia_dark_fun2m(p, xt)
+                avg_phi += trending_phase
+                trending_phis[i_trend] = trending_phase+orbit
+                trending_orbits[i_trend] = orbit
+                i_trend += 1
+            except Exception as e:
+                # just skip to next orbit and don't store any data, but do log a warning!
+                logging.warning(str(e))
+                datapoint_count[i_orbit] = 0         
         else:
             # faster, but less accurate
             idx = (ephases >= orbit) & (ephases < (orbit+1))
+            datapoint_count[i_orbit] = idx.size
             local_phi = ephases[idx]
             local_y = thermal_background[idx,:]
             abs_dist1 = np.abs(local_phi - (trending_phase+orbit))
@@ -377,6 +404,8 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             avg1 = np.mean(local_y[idx1,:], axis=0)
             trending_phis[i_trend] = phi1
             trending_ys[i_trend,:] = avg1
+            trending_orbits[i_trend] = orbit
+            datapoint_count[i_trend] = idx1.size #TODO: test.. idx1 isn't a tuple of np arrays?s
             if not np.isnan(phi1):
                 avg_phi += (phi1%1)
                 i_trend += 1
@@ -386,16 +415,27 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     print(avg_phi, i_trend)
     trending_phis = trending_phis[0:i_trend]
     trending_ys = trending_ys[0:i_trend]
+    uncertainties = uncertainties[0:i_trend,:]
+    trending_orbits = trending_orbits[0:i_trend]
+    err_lcs = err_lcs[0:i_trend,:]
+    err_trends = err_trends[0:i_trend,:]
+    datapoint_count = datapoint_count[0:i_trend]
     print("done.")
 
     print("remove invalid entries..")
     idx_goodphi = np.isfinite(trending_phis)
     trending_phis = trending_phis[idx_goodphi]
     trending_ys = trending_ys[idx_goodphi,:]
+    uncertainties = uncertainties[idx_goodphi,:]
+    trending_orbits = trending_orbits[idx_goodphi]
+    err_lcs = err_lcs[idx_goodphi,:]
+    err_trends = err_trends[idx_goodphi,:]
+    datapoint_count = datapoint_count[idx_goodphi]
     # filter a single pixel. probably a bad idea
     #idx_goody = np.isfinite(trending_ys[:,pixnr])
     #trending_phis = trending_phis[idx_goody]
     #trending_ys = trending_ys[idx_goody,:]
+    #...
     print("done.")
 
     ximin = int(xmin)
@@ -426,10 +466,17 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     out_orblist = np.array([], dtype=np.int32)
 
     i = 0
+    dummy_uncertainties = np.empty([n_pix])
+    dummy_uncertainties[:] = np.nan
     for orbit in range(int(ximin), int(ximax)):
         out_orblist = np.append(out_orblist, orbit)
         print(orbit)
         i_orbit = (np.where(in_orblist[:] == orbit))[0][0]
+        res = (np.where(trending_orbits == orbit))[0]
+        if res.size > 0:
+            i_trend = res[0]
+        else:
+            i_trend = -1
         aos = inter_aos[i_orbit,:]
         amps = inter_amps[i_orbit,:]
         channel_phase1 = inter_phases[i_orbit,0]
@@ -449,12 +496,18 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
             if vddb.new_entry(orbit):
                 if useTrendFit:
-                    vddb.append(orbit, wave, err_trends=err_trends[i,:], err_lcs=err_lcs[i,:])
+                    if i_trend >= 0:
+                        vddb.append(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
+                    else:
+                        vddb.append(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
                 else:
                     vddb.append(orbit, wave)
             else:
                 if useTrendFit:
-                    vddb.replace(orbit, wave, err_trends=err_trends[i,:], err_lcs=err_lcs[i,:])
+                    if i_trend >= 0:
+                        vddb.replace(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
+                    else:
+                        vddb.append(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
                 else:
                     vddb.append(orbit, wave)
         i += 1

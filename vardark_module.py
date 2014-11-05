@@ -208,21 +208,23 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
+    if ephases.size <= 2:
+        raise Exception("Not enough datapoints for fit:", ephases.size)
+
     #
     # fit it
     #
 
     x = ephases-orbit, pet #, coadd
 
-    #fitobj = kmpfit.Fitter(residuals=scia_dark_residuals1, data=(x, all_readouts[:,pixnr], all_sigmas[:,pixnr]))
-    
-    aoinfo = dict(fixed=True, limits=[0,10000])
-    lcinfo = dict(fixed=False, limits=[-100000.,+100000.])
-    amp1info = dict(fixed=True, limits=[-1000,+1000])
-    trendinfo = dict(fixed=False, limits=[-1000,+1000])
-    amp2info = dict(fixed=True, limits=[-1.,+1.])
-    phase1info = dict(fixed=True, limits=[-3.,+3.])
-    phase2info = dict(fixed=True, limits=[-3.,+3.])
+    # note the limits are just slightly wider than in the monthly fit. we do this to get rid of float32->float64 conversion errors!
+    aoinfo = dict(fixed=True, limits=[-0.1,10000.1])
+    lcinfo = dict(fixed=False, limits=[-100000.1,+100000.1])
+    amp1info = dict(fixed=True, limits=[-1000.1,+1000.1])
+    trendinfo = dict(fixed=False, limits=[-1000.1,+1000.1])
+    amp2info = dict(fixed=True, limits=[-1.01,+1.01])
+    phase1info = dict(fixed=True, limits=[-3.01,+3.01])
+    phase2info = dict(fixed=True, limits=[-3.01,+3.01])
     parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
 
     # ..and fit
@@ -239,27 +241,27 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     uncertainty = numpy.empty(n_pix)
     uncertainty[:] = numpy.nan
     for pixnr in range(n_pix):
-        # prepare initial parameters
+        # prepare initial parameters.. 
         p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
         if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)) and (x[0].size > 0):
             #print(orbit, pixnr, x)
-            print(orbit, pixnr, p0, parinfo)
+            #print(orbit, pixnr, p0, parinfo)
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
             continue
-        #fitobj.fit(params0=p0)
         if verbose:
             print(pixnr, fitobj.message)
+            print(p0, x, pix_readouts, pix_sigmas)
+        if (fitobj.status <= 0):
+            raise Exception(fitobj.message)
         statuses[pixnr] = fitobj.status
         res_lcs[pixnr] = fitobj.params[1]
         err_lcs[pixnr] = fitobj.stderr[1]
         res_trends[pixnr] = fitobj.params[3]
         err_trends[pixnr] = fitobj.stderr[3]
-        if (fitobj.status <= 0):
-           raise Exception(fitobj.message)
         uncertainty[pixnr] = np.std(scia_dark_fun2(fitobj.params, x) - pix_readouts)
         #else:
         #   print("Optimal parameters: ", fitobj.params)
