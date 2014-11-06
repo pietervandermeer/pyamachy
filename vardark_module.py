@@ -26,6 +26,7 @@ from numpy import cos, pi
 from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
+from ranges import remove_overlap, is_in_range
 from envisat import PhaseConverter
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid, read_extracted_states_
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
@@ -289,8 +290,20 @@ def read_ch8_darks(orbit_range, stateid):
     return jds, readouts, noise, tdet, pet, coadd
 
 class AllDarks():
-
+    """
+    Class that buffers ranges of darks for the Pixel Exposure Times (PETs) it was initialized for,
+    and returns dark data for specified range all from buffer.
+    It is relatively smart in the sense that it handles OCR43 and bad orbit slicing automatically.
+    It also requires minimal initialization. 
+    """
     def __init__(self, petlist):
+        """
+        Parameters
+        ----------
+
+        petlist : list or tuple of floats
+            PETs of the dark states
+        """
         self.petlist = petlist
         self.jds_ = numpy.array([])
         self.jds_ = numpy.array([])
@@ -300,8 +313,26 @@ class AllDarks():
         self.pet_ = numpy.array([])
         self.coadd_ = numpy.array([])
         self.ephases = numpy.array([])
+        self.range_list = []
 
-    def lump(self, orbit_range):
+    def _register_range(self, orbit_range):
+        """
+        register orbit range and automatically remove overlap
+        """
+        self.range_list.append(orbit_range)
+        self.range_list = remove_overlap(self.range_list)
+        return
+
+    def is_registered(self, orbit_range):
+        """
+        check if the range is within the previously fetched ranges.
+        """
+        return is_in_range(self.range_list, orbit_range)
+
+    def _lump(self, orbit_range):
+        """
+        a simple approach at fetching data. just append everything and let finalize() deduplicate.
+        """
         # concat all states
         for petje in self.petlist:
             #print("PET=",petje)
@@ -317,9 +348,33 @@ class AllDarks():
 
         return
 
-    # finalizes self.jds_, self.readouts_ .. etc to self.jds, self.readouts, etc
-    # eclipse phases are computed and sunrise is filtered out
-    def finalize(self):
+    def _lumpl(self, orbit_range):
+        """
+        lump with left side extended by one orbit. (because of orbit slicing in sdmf extract)
+        """
+        self._register_range(orbit_range)
+        self._lump([orbit_range[0]-1, orbit_range[1]])
+
+    def _lumpr(self, orbit_range):
+        """
+        lump with right side extended by one orbit. (because of orbit slicing in sdmf extract)
+        """
+        self._register_range(orbit_range)
+        self._lump([orbit_range[0], orbit_range[1]+1])
+
+    def _lumplr(self, orbit_range):
+        """
+        lump with right side extended by one orbit. (because of orbit slicing in sdmf extract)
+        """
+        self._register_range(orbit_range)
+        self._lump([orbit_range[0]-1, orbit_range[1]+1])
+
+    def _finalize(self):
+        """
+        finalizes (deduplicates) self.jds_, self.readouts_ .. etc to self.jds, self.readouts, etc
+        eclipse phases are computed and sunrise is filtered out
+        """
+
         # deduplicate after having lumped
         self.jds_, idx = numpy.unique(self.jds_, return_index=True)
         self.readouts_ = self.readouts_[idx,:]
@@ -345,18 +400,48 @@ class AllDarks():
 
         return
 
+    def buffer_range(self, orbit_range):
+        """
+        buffers the specified orbit range of darks.
+        takes into account OCR43 dark state definition change. 
+        takes into account orbit slicing issue in level 0 and sdmf extract db
+
+        Parameters
+        ----------
+
+        orbit_range : tuple or list, 2 integerss
+            orbit range
+        """
+        if not self.is_registered(orbit_range):
+            first_orbit = orbit_range[0]
+            last_orbit = orbit_range[1]
+            if first_orbit < 43362 and last_orbit >= 43362:
+                print("lump upto 43361")
+                self._lumpl([first_orbit, 43361])
+                print("lump from 43362")
+                self._lumpr([43362, last_orbit])
+            else:
+                print("lump")
+                self._lumplr(orbit_range)
+            self._finalize()
+
     def get_range(self, orbit_range, autoLump=True):
-        # this is not a perfect range check.. we need to keep track of stand-alone ranges, since ephases can differ from lump() orbit ranges 
-        notInRange = (self.ephases.size == 0) or (numpy.max(self.ephases) < int(orbit_range[1])) or (numpy.min(self.ephases) > int(orbit_range[0]))
-        if autoLump and notInRange:
-            print("AUTOLUMP")
-            # extend range because orbit in sdmf_extract db may be slices incorrectly.
-            extrange = list(orbit_range)
-            extrange[0] -= 1
-            extrange[1] += 1
-            self.lump(extrange)
-            self.finalize()
-        idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
+        """
+        retrieves the specified orbit range of darks for the caller. 
+        takes into account OCR43 dark state definition change. 
+        takes into account orbit slicing issue in level 0 and sdmf extract db
+
+        Parameters
+        ----------
+
+        orbit_range : tuple or list, 2 integerss
+            orbit range
+        autoLump : boolean, optional
+            set this to automatically buffer darks that are not yet in the buffer
+        """
+        if autoLump:
+            self.buffer_range(orbit_range)
+        idx = (self.ephases.astype('i') >= orbit_range[0]) & (self.ephases.astype('i') <= orbit_range[1])
         return numpy.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
 
 # compute thermal background trend between two normal orbits 
@@ -416,6 +501,7 @@ def compute_trend(alldarks, orbit, aos, amps, amp2, phaseshift, phaseshift2, **k
 
     return trends, lcs
 
+# TODO: OUTDATED.. replaced with another class of the same name. up for removal
 class VarDark:
     def __init__(self, orbit,ao, lc, amp, trend, phaseshift, amp2, phaseshift2):
         self.numPixels = 1024

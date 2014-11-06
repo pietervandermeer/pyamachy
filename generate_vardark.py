@@ -273,18 +273,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     #
 
     print("get darks..")
-    if first_orbit < 43362 and last_orbit >= 43362:
-        print("lump upto 43361")
-        ad.lump([first_orbit, 43361])
-        print("lump from 43362")
-        ad.lump([43362, last_orbit])
-    else:
-        print("lump")
-        ad.lump(orbit_range)
-    print("finalize")
-    ad.finalize()
-    print("get data")
-    n_darks, dummy, pets, coadds, readouts, noise, ephases = ad.get_range(orbit_range, autoLump=False)
+    n_darks, dummy, pets, coadds, readouts, noise, ephases = ad.get_range(orbit_range)
     print("done.")
 
     #
@@ -390,7 +379,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 i_trend += 1
             except Exception as e:
                 # just skip to next orbit and don't store any data, but do log a warning!
-                logging.warning(str(e))
+                logging.warning("failed to fit orbit.. "+str(e))
                 datapoint_count[i_orbit] = 0         
         else:
             # faster, but less accurate
