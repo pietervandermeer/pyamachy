@@ -68,7 +68,7 @@ def fit_monthlies(db_out_name, short=False):
         if (monthly == old_monthly) or (monthly > last_orbit):
             break
         # compute monthly fit, to obtain analog offset
-        print("compute montly fit:", monthly, "..")
+        print("compute monthly fit:", monthly, "..")
         channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(ad, monthly)
         aos_dset[i_monthly,:] = aos
         lcs_dset[i_monthly,:] = lcs

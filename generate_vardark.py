@@ -535,8 +535,8 @@ if __name__ == "__main__":
 
     n_pix = n_chanpix
     pts_per_orbit = 50
-    path = "/array/slot0B/SDMF/3.1/pieter"
-    #path = ""
+    #path = "/array/slot0B/SDMF/3.1/pieter" # risky.. might lead to overwriting over production database
+    path = "./" # default.. safe 
 
     #
     # parse command line arguments
@@ -613,9 +613,9 @@ if __name__ == "__main__":
         from interpolate_monthlies import interpolate_monthlies
         print(input_dbname, "not present. generating...")
         if args.shortMode:
-            interpolate_monthlies(input_dbname, path+"monthly_fits_short.h5")
+            interpolate_monthlies(input_dbname, path+"/monthly_fits_short.h5")
         else:
-            interpolate_monthlies(input_dbname, path+"monthly_fits_long.h5")
+            interpolate_monthlies(input_dbname, path+"/monthly_fits_long.h5")
 
     print(input_dbname, "-> (generate_vardark) -> ", dbname)
 
