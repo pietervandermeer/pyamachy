@@ -17,8 +17,7 @@
 #   Boston, MA  02111-1307, USA.
 #
 
-from __future__ import print_function
-from __future__ import division
+from __future__ import print_function, division
 
 import numpy
 import h5py

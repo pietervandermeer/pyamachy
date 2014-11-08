@@ -17,6 +17,7 @@ numpy.set_printoptions(threshold=numpy.nan, precision=4, suppress=True, linewidt
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark_module import load_varkdark_orbit
+from sciamachy_module import get_darkstateid
 
 class PixelQuality:
 
@@ -27,10 +28,10 @@ class PixelQuality:
         #
 
         self.numchannels = 8
-        self.numpixels   = 1024
+        self.num_chanpixels = 1024
         # boundary between 6 and 6+
-        self.boundary    = self.numpixels*5+795
-        self.pixelcount  = self.numchannels*self.numpixels
+        self.boundary    = self.num_chanpixels*5+795
+        self.num_pixels  = self.numchannels*self.num_chanpixels
         self.maxorbits   = 100000
 
         #
@@ -63,10 +64,10 @@ class PixelQuality:
         # allocate memory for flagging thresholds
         #
 
-        self.errorlc_thres    = numpy.zeros(self.pixelcount)
-        self.residual_thres   = numpy.zeros(self.pixelcount)
-        self.exposuretime_max = numpy.zeros(self.pixelcount)
-        self.sig_max          = numpy.zeros(self.pixelcount)
+        self.errorlc_thres    = numpy.zeros(self.num_chanpixels)
+        self.residual_thres   = numpy.zeros(self.num_chanpixels)
+        self.exposuretime_max = numpy.zeros(self.num_chanpixels)
+        self.sig_max          = numpy.zeros(self.num_chanpixels)
 
         #
         # expand the thresholds now to arrays with size 1024*8
@@ -75,21 +76,21 @@ class PixelQuality:
         #
 
         # treat channel 6+ seperately
-        range1k = numpy.arange(self.numpixels)
+        range1k = numpy.arange(self.num_chanpixels)
         for i in range(self.numchannels+1):
 
             # channels 1 to 5
             if i <= 4: 
-                channelindex = range1k + i * self.numpixels
+                channelindex = range1k + i * self.num_chanpixels
             # channel 6
             if i == 5: 
-                channelindex = numpy.arange(795) + self.numpixels * 5
+                channelindex = numpy.arange(795) + self.num_chanpixels * 5
             # channel 6+
             if i == 6: 
                 channelindex = numpy.arange(229) + self.boundary
             # channels 7 and 8
             if i >= 7: 
-                channelindex = range1k + (i-1)*self.numpixels
+                channelindex = range1k + (i-1)*self.num_chanpixels
 
     def get_config(self, config_file):
         """ 
@@ -160,7 +161,8 @@ class PixelQuality:
         # load vardark
         #
 
-        wave_phases, wave_orbit, darkcurrent, analogoffset = load_varkdark_orbit(orbit, False)
+        fname = self.cfg['db_dir']+self.cfg['dark_fname']
+        wave_phases, wave_orbit, darkcurrent, analogoffset, uncertainty = load_varkdark_orbit(orbit, False, give_uncertainty=True, fname=fname)
         # slice out a single phase, this is good enough for our purposes
         darkcurrent = darkcurrent[0,0,:].flatten()
         analogoffset = analogoffset.flatten()
@@ -173,8 +175,11 @@ class PixelQuality:
         readoutnoise = {}
         readoutmean = {}
         readoutpet = {}
-        for darkid in darkids:
+        darkpets = (0.125, 0.5, 1.0) # sun, nadir, nadir
+        for pet in darkpets:
+            darkid = get_darkstateid(pet, orbit)
             state_string = "State_"+format(darkid, "02d")
+            pet_string = str(pet)
             gextract = fextract[state_string]
             readoutnoise_dset = gextract["readoutNoise"]
             readoutmean_dset = gextract["readoutMean"]
@@ -183,8 +188,8 @@ class PixelQuality:
             if idx[0].size == 0:
                 logging.warning("no dark data for orbit %d!" % orbit)
                 invalid_mask[:] = True
-            readoutnoise[state_string] = readoutnoise_dset[idx[0],:]
-            readoutmean[state_string] = readoutmean_dset[idx[0],:]
+            readoutnoise[pet_string] = readoutnoise_dset[idx[0],:]
+            readoutmean[pet_string] = readoutmean_dset[idx[0],:]
 
             #
             # get pets for this orbit
@@ -192,7 +197,7 @@ class PixelQuality:
 
             clusconf = gextract["clusConf"]
             # find row based on orbit number
-            pets = numpy.zeros(self.pixelcount)
+            pets = numpy.zeros(self.num_pixels)
             idx_row = -1
             for row in clusconf:
                 idx_row += 1
@@ -205,10 +210,9 @@ class PixelQuality:
                 i_start = self.clusoff[i_clus]
                 i_end = self.clusoff[i_clus+1]
                 pets[i_start:i_end] = cluspets[i_clus]
-            
-            readoutpet[state_string] = pets
-            
-        self.readoutpet = readoutpet
+
+        # let's just take a single exposure time to begin with
+        self.noise_figure = np.mean(readoutnoise["1.0"], axis=0)[7*1024:]
 
         #
         # check invalid data points in the dark current calculation
@@ -216,26 +220,27 @@ class PixelQuality:
         # therefore unusable
         #
 
-        invalid_mask = (analogoffset == 0) | (np.isnan(analogoffset)) | (darkcurrent == 0) | (np.isnan(darkcurrent))
+        self.invalid_mask = (analogoffset == 0) | (np.isnan(analogoffset)) | (darkcurrent == 0) | (np.isnan(darkcurrent))
 
         #
         # check whether the darkcurrent residuals exceed their error
         #
 
         numdark = len(darkids)
-        tmp     = np.zeros(self.numpixels, dtype=np.float64)
-        tmp_count = np.zeros(self.numpixels, dtype=np.float64)
-        for darkid in darkids:
+        tmp     = np.zeros(self.num_chanpixels, dtype=np.float64)
+        tmp_count = np.zeros(self.num_chanpixels, dtype=np.float64)
+        for pet in darkpets:
+            pet_string = str(pet)
             state_string = "State_"+format(darkid, "02d")
 
             #
             # correct dark measurements with dark fit (sounds way too funny)
             #
             
-            pets = readoutpet[state_string][7*1024:8*1024]
-            corrmean = readoutmean[state_string][:,7*1024:8*1024] 
+            pets = np.zeros(1024) + pet
+            corrmean = readoutmean[pet_string][:,7*1024:8*1024] 
             corrmean -= darkcurrent * pets + analogoffset
-            corrnoise = readoutnoise[state_string][:,7*1024:8*1024]
+            corrnoise = readoutnoise[pet_string][:,7*1024:8*1024]
             #print(corrmean)
             print(corrmean.shape, corrnoise.shape, pets.shape, darkcurrent.shape, analogoffset.shape)
 
@@ -256,64 +261,91 @@ class PixelQuality:
                 tmp_count += goodnoise
                 i_row+=1
                 
-        residual_figure = tmp
+        self.residual_figure = tmp
 
         #
         # compute dark current error to darkcurrent ratio
         #
 
-        dc_err_figure = np.abs(darkcurrenterror / darkcurrent)
+        self.dc_err_figure = np.abs(uncertainty / darkcurrent)
 
         #
         # combine the criteria using a weighted sum 
         #
 
-        self.combined = (w_err*dc_err_figure + w_res*residual_figure + w_noise*noise_figure) * (not invalid_mask)
+        #print(dc_err_figure.shape, residual_figure.shape, noise_figure.shape)
+        self.combined = w_err*self.dc_err_figure + w_res*self.residual_figure + w_noise*self.noise_figure
+        self.combined = self.combined.flatten()
+        #print(self.combined, self.combined.shape, self.combined.dtype)
+        self.combined *= np.logical_not(self.invalid_mask)
+        print("SHAPE", self.combined.shape)
 
         return        
 
-    def create_figure_dset(self, f, name, orbit):
-        """ creates a new mask array in the database """
+    def create_figure_dset(self, f, name):
+        """ creates a new figure (float per pixel) array in the database """
         print("creating "+name)
-        dims = (self.maxorbits,self.pixelcount)
-        if (orbit < 1) or (orbit > self.maxorbits):
-            raise ValueError('orbit %d out of range [1,%d]' %
-                             (orbit,self.maxorbits))
+        dims = (0,self.num_chanpixels)
         dtype = numpy.float64
-        dat = numpy.zeros(dims, dtype=dtype)
-        f.create_dataset(name, dims, dtype=dtype, chunks=(16,self.numpixels), 
+        f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
                          compression='gzip', compression_opts=3, 
-                         maxshape=[None,self.pixelcount], data=dat)
+                         maxshape=(None,self.num_chanpixels))
 
-    def write(self):
-        """ write data for this orbit to database """
+    def create_mask_dset(self, f, name):
+        """ creates a new mask (bool per pixel) array in the database """
+        print("creating "+name)
+        dims = (0,self.num_chanpixels)
+        dtype = numpy.bool
+        f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
+                         compression='gzip', compression_opts=3, 
+                         maxshape=(None,self.num_chanpixels))
+
+    def write(self, directory=None):
+        """ 
+        write data for this orbit to database 
+        
+        Parameters
+        ----------
+
+        directory : string, optional
+            name of directory (excluding trailing separator)
+        """
         
         orbit = self.orbit
-        meta_dtype = numpy.dtype([('absOrbit', '=u4'), ('entryDate', '=S20')])
-        db_fname = self.cfg['db_dir']+self.cfg['pixelmask_fname']
+        if directory is None:
+            directory = self.cfg['db_dir']
+        db_fname = directory + "/" + self.cfg['pixelmask_fname']
         
         #
         # if database doesn't exist, then create it.. may take a while, but
         # subsequent writes should be quick
         #
 
+        now = datetime.datetime.now()
+        nowstr = now.strftime("%Y-%m-%d %H:%M:%S")
+
         try:
             open(db_fname)
         except IOError as e:
             print("creating db "+db_fname+"...")
             f = h5py.File(db_fname,'w')
-            print('creating metaTable')
-            metadata = numpy.empty((self.maxorbits), dtype=meta_dtype)
-            f.create_dataset("metaTable", (self.maxorbits,), dtype=meta_dtype, 
+            print('creating meta data')
+            orbits = np.array([orbit], dtype='u2')
+            entry_dates = np.array([nowstr]) 
+            f.create_dataset("orbits", (0,), dtype='u2', 
                              chunks=(1024,), compression='gzip', 
-                             compression_opts=3, maxshape=None, data=metadata)
-            self.create_figure_dset(f, "darkError", orbit)
-            self.create_figure_dset(f, "darkResidual", orbit)
-            self.create_figure_dset(f, "noise", orbit)
-            self.create_figure_dset(f, "combined", orbit)
+                             compression_opts=3, maxshape=(None,))
+            f.create_dataset("entryDate", (0,), dtype='S20', 
+                             chunks=(1024,), compression='gzip', 
+                             compression_opts=3, maxshape=(None,))
+            self.create_figure_dset(f, "darkError")
+            self.create_figure_dset(f, "darkResidual")
+            self.create_figure_dset(f, "noise")
+            self.create_figure_dset(f, "combined")
+            self.create_mask_dset(f, "invalid")
             f.close()
             print('created db')
-
+        
         #
         # modify record in database
         #
@@ -321,30 +353,38 @@ class PixelQuality:
         if h5py.h5f.is_hdf5(db_fname):
             f = h5py.File(db_fname)
             
-            now = datetime.datetime.now()
-            nowstr = now.strftime("%Y-%m-%d %H:%M:%S")
-            metadata = numpy.empty((1), dtype=meta_dtype)
-            metadata[0] = (orbit, nowstr)
-            
-            dset = f['metaTable']
-            dset[orbit-1] = metadata
-            dset = f['RTS']
-            dset[orbit-1,:] = self.rts_mask
+            # first open orbits dataset and get its size. then resize, write and close.
+            dset = f['orbits']
+            self.n_write = dset.size + 1
+            dset.resize((self.n_write,))
+            dset[self.n_write-1] = orbit
+
+            # now the other data sets
+            dset = f['entryDate']
+            dset.resize((self.n_write,))
+            dset[self.n_write-1] = nowstr
             dset = f['combined']
-            dset[orbit-1,:] = self.combined_mask
-            dset = f['darkCurrentError']
-            dset[orbit-1,:] = self.dc_err_mask
-            dset = f['darkCurrentSat']
-            dset[orbit-1,:] = self.darkcursat_mask
-            dset = f['residual']
-            dset[orbit-1,:] = self.residual_mask
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[self.n_write-1,:] = self.combined
+            dset = f['darkError']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[self.n_write-1,:] = self.dc_err_figure
+            dset = f['darkResidual']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[self.n_write-1,:] = self.residual_figure
+            dset = f['noise']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[self.n_write-1,:] = self.noise_figure
             dset = f['invalid']
-            dset[orbit-1,:] = self.invalid_mask
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[self.n_write-1,:] = self.invalid_mask
             
             f.close()
         else:
             logging.exception("failed to open database %s" % db_fname)
             raise
+
+        return
 
     def calculate_rts_rank(self, orbit, channel=6, test=False, 
                            pieter_flagging=True, christian_flagging=False, 
@@ -547,6 +587,6 @@ if __name__ == '__main__':
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)
-    p.write()
+    p.write(directory=".")
     print("Pixel mask data for orbit %d written to db." % orbit)
 

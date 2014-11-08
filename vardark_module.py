@@ -741,18 +741,23 @@ class VarDarkDb:
         else:
             self.create(vd)
 
-def load_varkdark_orbit(orbit, shortMode):
-    basename = "vardark"
-    if shortMode:
-        fname = basename+"_short.h5"
-    else:
-        fname = basename+"_long.h5"
+def load_varkdark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
+    if fname is None:
+        basename = "vardark"
+        if shortMode:
+            fname = basename+"_short.h5"
+        else:
+            fname = basename+"_long.h5"
+    print(fname)
     fid = h5py.File(fname, "r")
     orbit_dset = fid["dim_orbit"]
     idx_fid = orbit_dset[:] == orbit
     if np.sum(idx_fid) == 0:
         raise Exception("no thermal background found for orbit "+str(orbit)+"!")
     therm_dset = fid["varDark"]
+    if give_uncertainty:
+        uncertainty_dset = fid["uncertainties"]
+        uncertainty = uncertainty_dset[idx_fid,:]
     thermal_background = therm_dset[idx_fid,:,:]
     phases = fid["dim_phase"][:] + orbit
     fid.close()
@@ -770,7 +775,10 @@ def load_varkdark_orbit(orbit, shortMode):
     analog_offset = fin['aos'][idx_fin,:]
     fin.close()
 
-    return phases, orbit, thermal_background, analog_offset
+    if give_uncertainty:
+        return phases, orbit, thermal_background, analog_offset, uncertainty
+    else:
+        return phases, orbit, thermal_background, analog_offset
 
 #- main ------------------------------------------------------------------------
 
