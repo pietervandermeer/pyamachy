@@ -63,9 +63,27 @@ class PhaseConverter:
 
     def get_phase(self, jds, eclipseMode=True, getOrbits=False):
         """
-        input: jds: numpy array of julian dates or a float64 scalar
-               eclipseMode: boolean flag to indicate eclipse mode or polar mode
-        returns: numpy array of array phases (same size as 'jds')
+        Convert MJD2000 to accurate orbit number and orbit phase (eclipse-based or pole-based).
+
+        Parameters
+        ----------
+
+        jds : numpy array, float64
+            julian dates or a float64 scalar
+        eclipseMode : bool, optional
+            flag to indicate eclipse mode or polar mode
+        getOrbits : bool, optional
+            also return orbit numbers
+
+        Returns
+        -------
+
+        numpy array of array phases (same size as 'jds')
+
+        or
+
+        the phases and an array or absolute orbit numbers
+         
         """
         if not isinstance(jds, numpy.ndarray):
             jds = numpy.array(jds)

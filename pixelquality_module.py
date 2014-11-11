@@ -5,14 +5,12 @@ from __future__ import print_function, division
 
 import ConfigParser
 import numpy as np
-import numpy
 import matplotlib.pyplot as plt
 import h5py
 import logging
 import datetime
 import warnings
 warnings.simplefilter("error") # warnings to errors
-numpy.set_printoptions(threshold=numpy.nan, precision=4, suppress=True, linewidth=np.nan)
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
@@ -57,17 +55,17 @@ class PixelQuality:
         10,38,940,26,10,     \
         10,1004,10           
         ]
-        clusoff = numpy.cumsum(clussizes1)
-        self.clusoff = numpy.insert(clusoff, 0, 0)
+        clusoff = np.cumsum(clussizes1)
+        self.clusoff = np.insert(clusoff, 0, 0)
 
         #
         # allocate memory for flagging thresholds
         #
 
-        self.errorlc_thres    = numpy.zeros(self.num_chanpixels)
-        self.residual_thres   = numpy.zeros(self.num_chanpixels)
-        self.exposuretime_max = numpy.zeros(self.num_chanpixels)
-        self.sig_max          = numpy.zeros(self.num_chanpixels)
+        self.errorlc_thres    = np.zeros(self.num_chanpixels)
+        self.residual_thres   = np.zeros(self.num_chanpixels)
+        self.exposuretime_max = np.zeros(self.num_chanpixels)
+        self.sig_max          = np.zeros(self.num_chanpixels)
 
         #
         # expand the thresholds now to arrays with size 1024*8
@@ -76,7 +74,7 @@ class PixelQuality:
         #
 
         # treat channel 6+ seperately
-        range1k = numpy.arange(self.num_chanpixels)
+        range1k = np.arange(self.num_chanpixels)
         for i in range(self.numchannels+1):
 
             # channels 1 to 5
@@ -84,10 +82,10 @@ class PixelQuality:
                 channelindex = range1k + i * self.num_chanpixels
             # channel 6
             if i == 5: 
-                channelindex = numpy.arange(795) + self.num_chanpixels * 5
+                channelindex = np.arange(795) + self.num_chanpixels * 5
             # channel 6+
             if i == 6: 
-                channelindex = numpy.arange(229) + self.boundary
+                channelindex = np.arange(229) + self.boundary
             # channels 7 and 8
             if i >= 7: 
                 channelindex = range1k + (i-1)*self.num_chanpixels
@@ -136,6 +134,20 @@ class PixelQuality:
         dict['w_noise'] = float(parser.get('Processor','w_noise'))
         return dict
 
+    def clip_figure(self, figure):
+        nonan_idx = np.logical_not(np.isnan(figure))
+        if np.sum(nonan_idx) == 0:
+            return figure # nan in nan out
+        #print("nonan_idx=",nonan_idx)
+
+        idx = figure[nonan_idx] > 1
+        if (np.sum(idx) > 0):
+            #print("idx=",idx)
+            idx_ = np.where(nonan_idx)[0][idx]  # remap index, numpy doesn't do assignments on double sliced stuff
+            #print("idx_=",idx_)
+            figure[idx_] = 1
+        return figure
+
     def calculate(self, orbit):
         """ 
         perform the quality computation for specified orbit
@@ -183,36 +195,18 @@ class PixelQuality:
             gextract = fextract[state_string]
             readoutnoise_dset = gextract["readoutNoise"]
             readoutmean_dset = gextract["readoutMean"]
+            # TODO: nonlinearity correction
+            # TODO: SDMF3.1 noise is wrong, need to use SDMF3.0 or my own noise product derived from this!
             orbitlist = gextract["orbitList"]
-            idx = numpy.where(orbitlist[:] == orbit)
+            idx = np.where(orbitlist[:] == orbit)
             if idx[0].size == 0:
                 logging.warning("no dark data for orbit %d!" % orbit)
-                invalid_mask[:] = True
+                self.invalid_mask = np.ones(self.num_chanpixels, dtype=np.bool)
+                self.combined = np.empty((self.num_chanpixels,), dtype=np.float32)
+                self.combined[:] = np.nan
+                return
             readoutnoise[pet_string] = readoutnoise_dset[idx[0],:]
             readoutmean[pet_string] = readoutmean_dset[idx[0],:]
-
-            #
-            # get pets for this orbit
-            #
-
-            clusconf = gextract["clusConf"]
-            # find row based on orbit number
-            pets = numpy.zeros(self.num_pixels)
-            idx_row = -1
-            for row in clusconf:
-                idx_row += 1
-                if orbit < row[0]:
-                    break
-            clusconf_ = clusconf[:]
-            row = clusconf_[idx_row-1]
-            cluspets = row[3]
-            for i_clus in range(40):
-                i_start = self.clusoff[i_clus]
-                i_end = self.clusoff[i_clus+1]
-                pets[i_start:i_end] = cluspets[i_clus]
-
-        # let's just take a single exposure time to begin with
-        self.noise_figure = np.mean(readoutnoise["1.0"], axis=0)[7*1024:]
 
         #
         # check invalid data points in the dark current calculation
@@ -221,6 +215,23 @@ class PixelQuality:
         #
 
         self.invalid_mask = (analogoffset == 0) | (np.isnan(analogoffset)) | (darkcurrent == 0) | (np.isnan(darkcurrent))
+
+        # let's just take a single exposure time to begin with
+
+        if "1.0" in readoutnoise:
+            if readoutnoise["1.0"].ndim != 2:
+                print("ERROR, wrong nr of dimension!", readoutnoise["1.0"], readoutnoise["1.0"].shape)
+                self.combined = np.ones(self.num_chanpixels)
+                return
+            else:
+                self.noise_figure = np.mean(readoutnoise["1.0"], axis=0)[7*1024:]
+        else:
+            self.noise_figure = np.ones(self.num_chanpixels) * np.nan
+        # replace bogus 0 value with nan
+        idx = self.noise_figure == 0
+        if np.sum(idx) > 0:
+            self.noise_figure[idx] = np.nan
+        self.noise_figure = 1024 / self.noise_figure.flatten()
 
         #
         # check whether the darkcurrent residuals exceed their error
@@ -238,47 +249,81 @@ class PixelQuality:
             #
             
             pets = np.zeros(1024) + pet
+            if readoutmean[pet_string].ndim != 2:
+                print("ERROR, wrong nr of dimension!", readoutmean[pet_string], readoutmean[pet_string].shape)
+                self.combined = np.ones(self.num_chanpixels)
+                return
             corrmean = readoutmean[pet_string][:,7*1024:8*1024] 
             corrmean -= darkcurrent * pets + analogoffset
             corrnoise = readoutnoise[pet_string][:,7*1024:8*1024]
             #print(corrmean)
-            print(corrmean.shape, corrnoise.shape, pets.shape, darkcurrent.shape, analogoffset.shape)
+            #print(corrmean.shape, corrnoise.shape, pets.shape, darkcurrent.shape, analogoffset.shape)
 
             i_row = 0
             for meanrow in corrmean:
                 noiserow = corrnoise[i_row,:]
                 #phase = correcteddata[index[j]].phase
                 #if phase > 0.0 and phase < 0.3:
-                print(noiserow.shape)
+                #print(noiserow.shape)
                 noiserow = np.nan_to_num(noiserow)
                 goodnoise = noiserow > 0
                 # if there are invalid noise figures, generate an error!
                 if np.sum(goodnoise) == 0:
                     logging.warning('invalid noise(=0) in residual criterion!')
                     invalid_mask[:] = True
-                print(goodnoise.shape, meanrow)
+                #print(goodnoise.shape, meanrow)
                 tmp[goodnoise] += abs(meanrow[goodnoise] / noiserow[goodnoise])
                 tmp_count += goodnoise
                 i_row+=1
                 
-        self.residual_figure = tmp
+        self.residual_figure = np.sqrt(tmp.flatten()) / np.sqrt(20)
+        self.residual_figure = self.clip_figure(self.residual_figure)
 
         #
         # compute dark current error to darkcurrent ratio
         #
 
-        self.dc_err_figure = np.abs(uncertainty / darkcurrent)
+        self.dc_err_figure = np.abs(darkcurrent / uncertainty)
+        print(self.dc_err_figure.shape)
+        self.dc_err_figure = self.dc_err_figure.flatten() / 5000 # empirical scalar to get range normalized to [0..1]
+        print(self.dc_err_figure.shape)
+        self.dc_err_figure = self.clip_figure(self.dc_err_figure)
+
+        #
+        # compute wls figure
+        #
+
+        #
+
+        #
+        # compute sun figure
+        #
+
+        #
 
         #
         # combine the criteria using a weighted sum 
         #
 
-        #print(dc_err_figure.shape, residual_figure.shape, noise_figure.shape)
+        print(self.dc_err_figure.shape)
+        print(self.residual_figure.shape)
+        print(self.noise_figure.shape)
         self.combined = w_err*self.dc_err_figure + w_res*self.residual_figure + w_noise*self.noise_figure
         self.combined = self.combined.flatten()
         #print(self.combined, self.combined.shape, self.combined.dtype)
         self.combined *= np.logical_not(self.invalid_mask)
-        print("SHAPE", self.combined.shape)
+        self.combined = self.combined*w_sun + (1.-w_sun)*self.combined*self.sun_figure
+        self.combined = self.combined*w_wls + (1.-w_wls)*self.combined*self.wls_figure
+
+        #
+        # NaN is bogus => quality = 0, clip to range [0..1], and reverse (in preparation for pixelmask (1:bad, 0:good))
+        #
+
+        self.combined = np.nan_to_num(self.combined)
+        idx = self.combined > 1
+        if (np.sum(idx) > 0):
+            self.combined[idx] = 1
+        self.combined = 1 - self.combined
 
         return        
 
@@ -286,7 +331,7 @@ class PixelQuality:
         """ creates a new figure (float per pixel) array in the database """
         print("creating "+name)
         dims = (0,self.num_chanpixels)
-        dtype = numpy.float64
+        dtype = np.float64
         f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
                          compression='gzip', compression_opts=3, 
                          maxshape=(None,self.num_chanpixels))
@@ -295,10 +340,30 @@ class PixelQuality:
         """ creates a new mask (bool per pixel) array in the database """
         print("creating "+name)
         dims = (0,self.num_chanpixels)
-        dtype = numpy.bool
+        dtype = np.bool
         f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
                          compression='gzip', compression_opts=3, 
                          maxshape=(None,self.num_chanpixels))
+
+    def write_ascii(self, directory=None, all_figures=False):
+        """ 
+        write combined quality figure for this orbit to separate ascii file (<orbit>.txt)
+        
+        Parameters
+        ----------
+
+        directory : string, optional
+            name of directory (excluding trailing separator)
+        """
+        if directory is None:
+            directory = self.cfg['db_dir']
+        fout = open(directory+"/"+str(self.orbit)+".txt", "w")
+        for i in range(self.num_chanpixels):
+            if all_figures:
+                fout.write(str(self.noise_figure[i])+"\t"+str(self.residual_figure[i])+"\t"+str(self.dc_err_figure[i])+"\t"+str(self.combined[i])+"\n")
+            else:
+                fout.write(str(self.combined[i])+"\n")
+        return
 
     def write(self, directory=None):
         """ 
@@ -347,37 +412,56 @@ class PixelQuality:
             print('created db')
         
         #
-        # modify record in database
+        # store record in database
         #
 
         if h5py.h5f.is_hdf5(db_fname):
             f = h5py.File(db_fname)
             
-            # first open orbits dataset and get its size. then resize, write and close.
+            # check if orbit already present..
             dset = f['orbits']
-            self.n_write = dset.size + 1
-            dset.resize((self.n_write,))
-            dset[self.n_write-1] = orbit
+            idx = dset[:] == orbit
+            if np.sum(idx) > 0:
+                # replace
+                idx = np.where(idx)[0][0]
+                dset[idx] = orbit
+                dset = f['entryDate']
+                dset[idx] = nowstr
+                dset = f['combined']
+                dset[idx,:] = self.combined
+                dset = f['darkError']
+                dset[idx,:] = self.dc_err_figure
+                dset = f['darkResidual']
+                dset[idx,:] = self.residual_figure
+                dset = f['noise']
+                dset[idx,:] = self.noise_figure
+                dset = f['invalid']
+                dset[idx,:] = self.invalid_mask
+            else:
+                # append: resize and write.. orbits dataset first
+                self.n_write = dset.size + 1
+                dset.resize((self.n_write,))
+                dset[self.n_write-1] = orbit
 
-            # now the other data sets
-            dset = f['entryDate']
-            dset.resize((self.n_write,))
-            dset[self.n_write-1] = nowstr
-            dset = f['combined']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[self.n_write-1,:] = self.combined
-            dset = f['darkError']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[self.n_write-1,:] = self.dc_err_figure
-            dset = f['darkResidual']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[self.n_write-1,:] = self.residual_figure
-            dset = f['noise']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[self.n_write-1,:] = self.noise_figure
-            dset = f['invalid']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[self.n_write-1,:] = self.invalid_mask
+                # now the other data sets
+                dset = f['entryDate']
+                dset.resize((self.n_write,))
+                dset[self.n_write-1] = nowstr
+                dset = f['combined']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.combined
+                dset = f['darkError']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.dc_err_figure
+                dset = f['darkResidual']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.residual_figure
+                dset = f['noise']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.noise_figure
+                dset = f['invalid']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.invalid_mask
             
             f.close()
         else:
@@ -400,13 +484,13 @@ class PixelQuality:
             6 or 8, 6 implies channel 6+, default = 6
         test : boolean, optional
             set this to plot bar graph instead of writing to db.
-        pieter_flagging: boolean, optional
+        pieter_flagging : boolean, optional
             set this to use time domain flagging, "pieter" style 
-        christian_flagging: boolean, optional
+        christian_flagging : boolean, optional
             set this to use time domain flagging, "christian" style 
-        timedomain_flagging: boolean, optional
+        timedomain_flagging : boolean, optional
             set this to use both pieter and christian flagging
-        eclipse_flagging: boolean, optional
+        eclipse_flagging : boolean, optional
             set this to use histogram eclipse data  
         
         Returns
@@ -452,7 +536,7 @@ class PixelQuality:
         # asuming absorbit is the first element..
         n_eff_orbits = statedark_mtbl.size
         # inefficient, but i don't know a way to slice it efficiently..
-        ec_orbits = numpy.zeros(n_eff_orbits, dtype=int)
+        ec_orbits = np.zeros(n_eff_orbits, dtype=int)
         for i in range(n_eff_orbits):
             ec_orbits[i] = statedark_mtbl[i][0]
         #print 'ec_orbits=', ec_orbits
@@ -490,22 +574,22 @@ class PixelQuality:
         # process 2D arrays (orbits x pixels)
         #
 
-        time_method_pieter    = numpy.zeros(1024, dtype=numpy.byte)
-        time_method_christian = numpy.zeros(1024, dtype=numpy.byte)
+        time_method_pieter    = np.zeros(1024, dtype=np.byte)
+        time_method_christian = np.zeros(1024, dtype=np.byte)
 
         #
         # compute "RTS ranking" of darklimb histogram, based on empirical criteria
         #
         #print dl_rtslevel.shape
-        dl_rtslice = numpy.transpose(dl_rtslevel[1,:,0]) # checks if 2nd mode is active (i.e. multi-mode, i.e. rts)
-        eclipse_histo_method = numpy.zeros(1024, dtype=numpy.byte)
-        sum_ec_peaks =numpy.sum(ec_npeaks,axis=1)
+        dl_rtslice = np.transpose(dl_rtslevel[1,:,0]) # checks if 2nd mode is active (i.e. multi-mode, i.e. rts)
+        eclipse_histo_method = np.zeros(1024, dtype=np.byte)
+        sum_ec_peaks =np.sum(ec_npeaks,axis=1)
         eclipse_histo_method[795:1024] = sum_ec_peaks[0:229] > 3
         dl_rts = dl_rtslice > 0
         msk = -1
-        darklimb_histo_method = numpy.array(((dl_rts*msk) & numpy.transpose((1 + (jumpratios >= 1) * (peakratios < 2)))), dtype=numpy.byte)
+        darklimb_histo_method = np.array(((dl_rts*msk) & np.transpose((1 + (jumpratios >= 1) * (peakratios < 2)))), dtype=np.byte)
 
-        combined_arr = numpy.zeros(1024)
+        combined_arr = np.zeros(1024)
 
         # criteria combination bitfield (currently 4 least significant bits)
         # ------------DPEC
@@ -522,11 +606,11 @@ class PixelQuality:
 
             stds  = dl_stds[0,pix,:]
             means = dl_means[0,pix,:]
-            #stds  = numpy.reshape(dl_stds[0,pix,:],?)
-            #means = numpy.reshape(dl_means[0,pix,:],?)
+            #stds  = np.reshape(dl_stds[0,pix,:],?)
+            #means = np.reshape(dl_means[0,pix,:],?)
 
             # remove trailing zeroes
-            idx = numpy.where(means == 0)
+            idx = np.where(means == 0)
             if idx[0].size > 1:
                 stds  = stds[0:idx[0]]
                 means = means[0:idx[0]]
@@ -534,10 +618,10 @@ class PixelQuality:
                 if idx[0] >= 0:
                     continue
 
-            dl_med_std = numpy.median(stds)
-            dl_diffs   = (means-numpy.roll(means,1))[1:]
-            idx_step   = numpy.where(numpy.abs(dl_diffs) > 2*dl_med_std)
-            idx_noise  = numpy.where(stds > 2*dl_med_std)
+            dl_med_std = np.median(stds)
+            dl_diffs   = (means-np.roll(means,1))[1:]
+            idx_step   = np.where(np.abs(dl_diffs) > 2*dl_med_std)
+            idx_noise  = np.where(stds > 2*dl_med_std)
             time_method_pieter[pix] = (idx_step[0].size > 0) or (idx_noise[0].size > 0)
 
             #
@@ -546,8 +630,8 @@ class PixelQuality:
             # (lower and upper bounds check not possible because not dark corrected!) 
             #
 
-            minmean   = numpy.min(means)
-            maxmean   = numpy.max(means)
+            minmean   = np.min(means)
+            maxmean   = np.max(means)
             rangemean = maxmean-minmean
             time_method_christian[pix] = rangemean > 35
 
@@ -581,6 +665,7 @@ class PixelQuality:
 #- main code -------------------------------------------------------------------
 
 if __name__ == '__main__':
+    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality()
     orbit = 10000
@@ -590,3 +675,5 @@ if __name__ == '__main__':
     p.write(directory=".")
     print("Pixel mask data for orbit %d written to db." % orbit)
 
+    a = p.clip_figure(np.array([np.nan, 0, 0.5, 1.0, 1.5]))
+    print(a)

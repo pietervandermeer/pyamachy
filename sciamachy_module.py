@@ -44,6 +44,14 @@ petcorr = 1.18125e-3
 # nr of pixels per channel
 n_chanpix = 1024
 
+# start orbits of the decontamination periods over the entire mission
+decon_start_orbits = [4380, 5718, 6384, 7574, 9407, 12031, 14675, 35574]
+# end orbits of the decontamination periods over the entire mission
+decon_end_orbits = [4428, 5766, 6449, 7827, 9673, 12208, 14912, 35848]
+# intervals between and after decontaminations
+decon_intervals = [[4428,5718],[5766,6384],[6449,7574],[7827,9407],[9673,12031],[12208,14675],[14912,35574],[35848,52000]]
+
+# TODO: this shouldn't be here. not directly related to the physical properties of the instrument
 mask_criteria = ['combined','RTS','darkCurrentError','darkCurrentSat','invalid','residual']
 
 class MemCorrector:

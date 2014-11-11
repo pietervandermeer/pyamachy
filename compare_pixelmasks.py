@@ -36,6 +36,25 @@ class Mask:
         self.mask = mask[7*1024:8*1024]
         return
 
+    # ASCII version of pixelquality 
+    def load_ascii_quality(self, fname):
+        with open(fname) as f:
+            content = f.readlines()
+
+            #
+            # read in pixels
+            #
+
+            mask = np.zeros([1024], dtype=np.bool) 
+            i = 0
+            for line in content:
+                mask[i] = bool(int(float(line.rstrip('\n'))))
+                i += 1
+
+        self.mask = mask
+
+        return
+
     def diff(self, new):
         tmp = np.logical_xor(self.mask, new.mask)
         channel_indices = np.where(tmp)[0] 
@@ -71,12 +90,27 @@ class Mask:
         self.win_start = 0
         self.win_end = 1024
 
-#-- main -----------------------------------------------------------------------
+def print_dead_quality():
+    orbit = 50000
+    m = Mask()
+    m.load_ascii_quality("qualities/"+str(orbit)+".txt")
+    print(np.where(m.mask))
+    print(np.sum(m.mask))
 
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+    wlsmask = np.zeros(1024, dtype=np.bool)
+    wls_idx = np.array([143, 196, 219, 220, 222, 254, 338, 398, 399, 405, 406, 494, 502, 577, 601, 609, 624, 635, 678, 707, 779, 802, 868, 881, 902])
+    sun_idx = np.array([218, 219, 220, 609, 779, 883, 902, 1008])
+    wlsmask[wls_idx] = True
+    new_alive = m.mask.astype('i') - wlsmask
+    print("new alive = ", np.where(new_alive == 1), np.where(new_alive == 1)[0].size)
+    new_dead = wlsmask.astype('i') - m.mask
+    print("new dead = ", np.where(new_dead  == 1), np.where(new_dead == 1)[0].size)
+    print(m.mask)
+    print(new_alive)
+    print(new_dead)
+    return
 
+def print_new_dead_new_alive():
     start_orbit = 21847 
     end_orbit = 21890
 
@@ -103,6 +137,15 @@ if __name__ == "__main__":
     for orbit in range(start_orbit, end_orbit):
         m2.load_ascii(orbit)
         print(orbit, "new dead:", m1.get_new_dead(m2), "new alive:", m1.get_new_alive(m2))
+
+#-- main -----------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+
+    #print_new_dead_new_alive()
+    print_dead_quality()
 
     # m2 = Mask()
     # m2.load_ascii(49245)

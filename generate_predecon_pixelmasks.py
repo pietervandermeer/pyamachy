@@ -9,7 +9,8 @@ if __name__ == "__main__":
 
     # orbits = decon_start_orbits
     # orbits.append(52000) # add end of mission to have a full list of intervals "between" decontaminations
-    orbits = range(6200,52000)
+    #orbits = range(6200,52000)
+    orbits = range(5700,8300)
 
     for orbit in orbits:
 #        if orbit < 6000:
