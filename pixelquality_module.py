@@ -15,7 +15,7 @@ warnings.simplefilter("error") # warnings to errors
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark_module import load_varkdark_orbit
-from sciamachy_module import get_darkstateid
+from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec
 
 class PixelQuality:
 
@@ -90,6 +90,14 @@ class PixelQuality:
             if i >= 7: 
                 channelindex = range1k + (i-1)*self.num_chanpixels
 
+        #
+        # prepare non-linearity correction
+        #
+
+        self.nlc = NonlinCorrector()
+
+        return
+
     def get_config(self, config_file):
         """ 
         load configuration from file 
@@ -132,6 +140,8 @@ class PixelQuality:
         dict['w_err'] = float(parser.get('Processor','w_err'))
         dict['w_res'] = float(parser.get('Processor','w_res'))
         dict['w_noise'] = float(parser.get('Processor','w_noise'))
+        dict['w_sun'] = float(parser.get('Processor','w_sun'))
+        dict['w_wls'] = float(parser.get('Processor','w_wls'))
         return dict
 
     def clip_figure(self, figure):
@@ -166,8 +176,12 @@ class PixelQuality:
         w_err = self.cfg['w_err']
         w_res = self.cfg['w_res']
         w_noise = self.cfg['w_noise']
+        w_sun = self.cfg['w_sun']
+        w_wls = self.cfg['w_wls']
+
         self.orbit = orbit
         darkids = self.cfg['deadflaggingstates']
+        calib_db = self.cfg['db_dir']+self.cfg['extract_fname'] # extract_calib database name
 
         #
         # load vardark
@@ -180,10 +194,25 @@ class PixelQuality:
         analogoffset = analogoffset.flatten()
 
         #
+        # load sdmf 3.1 dark fit
+        #
+
+        fdark = h5py.File("/SCIA/SDMF31/sdmf_dark.h5", 'r')
+        gdark = fdark['DarkFit']
+        darkcurrent_dset  = gdark["darkCurrent"]
+        darkcurrenterror_dset  = gdark["darkCurrentError"]
+        analogoffset_dset = gdark["analogOffset"]
+        darkcurrent31      = darkcurrent_dset[orbit-1,7*1024:]
+#        darkcurrenterror = darkcurrenterror_dset[orbit-1,:]
+        analogoffset31     = analogoffset_dset[orbit-1,7*1024:]
+        idx = (np.nan_to_num(analogoffset31) > 60000)
+        analogoffset31[idx] = np.nan
+
+        #
         # load dark state data (noise/readout for residual)
         #
 
-        fextract = h5py.File(self.cfg['db_dir']+self.cfg['extract_fname'], 'r')
+        fextract = h5py.File(calib_db, 'r')
         readoutnoise = {}
         readoutmean = {}
         readoutpet = {}
@@ -290,16 +319,50 @@ class PixelQuality:
         self.dc_err_figure = self.clip_figure(self.dc_err_figure)
 
         #
+        # prepare for figures that require light measurements (and short vardark product)
+        # TODO: disabled until vardark_short is available. SDMF3.1 dark fit will also work well on the short exposure times
+        #
+
+        # fname = self.cfg['db_dir']+"pieter/vardark_short.h5"
+        # wave_phases_s, wave_orbit_s, darkcurrent_s, analogoffset_s = load_varkdark_orbit(orbit, False, fname=fname)
+        # # slice out a single phase, this is good enough for our purposes
+        # darkcurrent_s = darkcurrent_s[0,0,:].flatten()
+        # analogoffset_s = analogoffset_s.flatten()
+
+        import matplotlib.pyplot as plt
+        pixnr = 592
+
+        #
         # compute wls figure
         #
 
-        #
+        dictwls = get_closest_state_exec(orbit, 61, calib_db, readoutMean=True)
+        print("wls pets = ", dictwls['pet'])
+        wls_readout = self.nlc.correct_ch8(dictwls['readoutMean']).flatten()
+        print(wls_readout.shape)
+        wls_readout -= darkcurrent31 * dictwls['pet'] + analogoffset31
+        print(wls_readout.shape)
+        self.wls_figure = wls_readout / 100.
+        print(self.wls_figure.shape)
+        plt.cla()
+        #ax = plt.add_subplot(2,1,1)
+#        plt.plot(np.arange(1024), wls_readout, 'bo', np.arange(1024), analogoffset31, 'go')
+        plt.plot(np.arange(1024), wls_readout, 'bo', [0,1024], [100,100], 'k-')
+        #ax.set_yscale('log')
+        plt.show()
 
         #
         # compute sun figure
         #
 
-        #
+        dictsun = get_closest_state_exec(orbit, 62, calib_db, readoutMean=True)
+        print("sun pets = ", dictsun['pet'])
+        sun_readout = self.nlc.correct_ch8(dictsun['readoutMean']).flatten()
+        sun_readout -= darkcurrent31 * dictsun['pet'] + analogoffset31
+        self.sun_figure = sun_readout / 100.
+        plt.cla()
+        plt.plot(np.arange(1024), sun_readout, 'ro', [0,1024], [100,100], 'k-')
+        plt.show()
 
         #
         # combine the criteria using a weighted sum 
@@ -668,7 +731,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality()
-    orbit = 10000
+    orbit = 22000
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)

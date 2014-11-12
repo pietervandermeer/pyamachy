@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 
 import numpy as np
+import h5py
 
 class Mask:
 
@@ -138,6 +139,62 @@ def print_new_dead_new_alive():
         m2.load_ascii(orbit)
         print(orbit, "new dead:", m1.get_new_dead(m2), "new alive:", m1.get_new_alive(m2))
 
+    return
+
+def print_criteria(orbit):
+    m = Mask()
+
+    #
+    # first just print combined smoothmask
+    #
+
+    m.load_ascii(orbit)
+    print(np.where(m.mask))
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid = h5py.File(fname, "r")
+    grpname = "orbitalMask/"
+    ds_orbits = fid[grpname+"orbitList"]
+
+    orbits = ds_orbits[:]
+    #print(orbits)
+
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+
+    i = np.argmax(idx)
+    print(i)
+
+    pixnr = 613+7*1024
+
+    ds_combined = fid[grpname+"combined"]
+    print(ds_combined[pixnr,i])
+    ds_ao = fid[grpname+"analogOffset"]
+    print("ao",ds_ao[pixnr,i])
+    ds_aoerr = fid[grpname+"analogOffsetError"]
+    print("aoerr",ds_aoerr[pixnr,i])
+    ds_dc = fid[grpname+"darkCurrent"]
+    print("dc",ds_dc[pixnr,i])
+    ds_dcerr = fid[grpname+"darkCurrentError"]
+    print("dcerr",ds_dcerr[pixnr,i])
+    ds_chi = fid[grpname+"chiSquare"]
+    print("chi",ds_chi[pixnr,i])
+    ds_noise = fid[grpname+"noise"]
+    print("noise",ds_noise[pixnr,i])
+    ds_inv = fid[grpname+"invalid"]
+    print("inv",ds_inv[pixnr,i])
+    ds_ppg = fid[grpname+"pixelGain"]
+    print("ppg",ds_ppg[pixnr,i])
+    ds_res = fid[grpname+"residual"]
+    print("res",ds_res[pixnr,i])
+    ds_sun = fid[grpname+"sunResponse"]
+    print("sun",ds_sun[pixnr,i])
+    ds_wls = fid[grpname+"wlsResponse"]
+    print("wls",ds_wls[pixnr,i])
+
+    return
+
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -145,7 +202,8 @@ if __name__ == "__main__":
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
     #print_new_dead_new_alive()
-    print_dead_quality()
+    #print_dead_quality()
+    print_criteria(22000)
 
     # m2 = Mask()
     # m2.load_ascii(49245)

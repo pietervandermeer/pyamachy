@@ -58,7 +58,7 @@ class VarDarkdb:
         maxshape = (None, self.ds_phase.size, self.ds_pixel.size,)
         dset = self.fid.create_dataset( "varDark", creshape,
                                         maxshape=maxshape, 
-                                        dtype="f", chunks=chunks )
+                                        dtype="f") #, chunks=chunks ) # chunking disabled as current libraries give deprecation error
         dset.dims[0].attach_scale( self.fid['dim_orbit'] )
         dset.dims[0].label = 'absolute orbit number'
         dset.dims[1].attach_scale( self.fid['dim_phase'] )

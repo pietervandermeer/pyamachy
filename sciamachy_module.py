@@ -19,7 +19,7 @@
 
 from __future__ import print_function, division
 
-import numpy
+import numpy as np
 import h5py
 import ConfigParser
 
@@ -29,15 +29,15 @@ functions and classes related to SCIAMACHY operation and instrument
 """
 
 channels = ['1','2','3','4','5','6','6+','7','8']
-pixranges = [numpy.arange(1024), \
-             1024+numpy.arange(1024), \
-             1024*2+numpy.arange(1024), \
-             1024*3+numpy.arange(1024), \
-             1024*4+numpy.arange(1024), \
-             1024*5+numpy.arange(795), \
-             1024*5+795+numpy.arange(229), \
-             1024*6+numpy.arange(1024), \
-             1024*7+numpy.arange(1024), \
+pixranges = [np.arange(1024), \
+             1024+np.arange(1024), \
+             1024*2+np.arange(1024), \
+             1024*3+np.arange(1024), \
+             1024*4+np.arange(1024), \
+             1024*5+np.arange(795), \
+             1024*5+795+np.arange(229), \
+             1024*6+np.arange(1024), \
+             1024*7+np.arange(1024), \
             ]
 # exposure time error
 petcorr = 1.18125e-3
@@ -83,7 +83,7 @@ class MemCorrector:
     def correct(self, spectrum):
         for i in range(5):
             spec = (spectrum[i*1024:(i+1)*1024]).round().astype(int)
-            spec = numpy.clip(spec,0,65535)
+            spec = np.clip(spec,0,65535)
             spectrum[i*1024:(i+1)*1024] -= self.memtbl[i,spec]
         return spectrum
 
@@ -132,7 +132,7 @@ class NonlinCorrector:
             #print "tabidx.shape=", tabidx.shape
             #print tabidx
             spec = (spectrum[i_chan*1024:(i_chan+1)*1024]).round().astype(int)
-            spec = numpy.clip(spec,0,65535)
+            spec = np.clip(spec,0,65535)
             #print spec,spec.shape
             spectrum[i_chan*1024:(i_chan+1)*1024] -= self.nlintbl[tabidx,spec]
         return spectrum
@@ -142,7 +142,7 @@ class NonlinCorrector:
         #print "tabidx.shape=", tabidx.shape
         #print tabidx
         spec = spectrum.round().astype(int)
-        spec = numpy.clip(spec,0,65535)
+        spec = np.clip(spec,0,65535)
         #print spec,spec.shape
         spectrum -= self.nlintbl[tabidx,spec]
         return spectrum
@@ -161,7 +161,7 @@ class pixelmask:
         fmask = h5py.File('/SCIA/share/SDMF/3.0/sdmf_pixelmask.h5', 'r')
         gmask = fmask['smoothMask']
         self.orbits = (gmask['orbitList'])[:]
-        self.msk = numpy.transpose(gmask['combined'][:,:])
+        self.msk = np.transpose(gmask['combined'][:,:])
         fmask.close()
 
 class orbitfilter:
@@ -192,12 +192,12 @@ class orbitfilter:
         full_monthlies_fname = self.cfg['db_dir']+self.cfg['monthlies_fname']
         # this one is tricky since it contains ranges along with HK info
         full_quality_fname   = self.cfg['db_dir']+self.cfg['quality_fname']
-        self.monthlies = numpy.loadtxt(full_monthlies_fname, dtype=int)
+        self.monthlies = np.loadtxt(full_monthlies_fname, dtype=int)
         qua_file = open(full_quality_fname,'r')
         qua = qua_file.read()
         list1 = qua.split('\n')
         n_rows = len(list1)-1 # assuming there's a trailing \n
-        qua_ranges = numpy.zeros((n_rows,2),dtype=int)
+        qua_ranges = np.zeros((n_rows,2),dtype=int)
         #print qua_ranges.shape
         i=0
         for line in list1:
@@ -222,32 +222,32 @@ class orbitfilter:
 
     # stamp out all the low-quality orbit ranges
     def get_quality_orbit_filter(self, orbits):
-        mask = numpy.ones(orbits.size, dtype=bool)
+        mask = np.ones(orbits.size, dtype=bool)
         n_ranges = self.qualities.shape[0]
         for i in range(n_ranges):
             start = self.qualities[i,0]
             end = self.qualities[i,1]
             #loc_mask = (orbits < start) | (orbits > end)
             #mask &= loc_mask
-            loc_idx = numpy.where((orbits >= start) & (orbits < end))
+            loc_idx = np.where((orbits >= start) & (orbits < end))
             mask[loc_idx] = False
         return mask
 
     # stamp out all the orbits around the monthly calibrations 
     # (without limb or nadir measurements)
     def get_monthly_orbit_filter(self, orbits):
-        monthly_kernels = numpy.concatenate((self.monthlies,self.monthlies+2,
-                                             self.monthlies+4,self.monthlies-2,
-                                             self.monthlies-4))
-        mask = numpy.in1d(orbits, monthly_kernels)
-        mask = numpy.invert(mask)
+        monthly_kernels = np.concatenate((self.monthlies,self.monthlies+2,
+                                          self.monthlies+4,self.monthlies-2,
+                                          self.monthlies-4))
+        mask = np.in1d(orbits, monthly_kernels)
+        mask = np.invert(mask)
         return mask
 
     # return closest monthly calibration orbit
     def get_closest_monthly(self, orbit):
-        delta = numpy.abs(self.monthlies - orbit)
-        idx = numpy.argmin(delta)
-        if numpy.isscalar(idx):
+        delta = np.abs(self.monthlies - orbit)
+        idx = np.argmin(delta)
+        if np.isscalar(idx):
             return self.monthlies[idx]
         else:
             return self.monthlies[idx[0]]
@@ -255,8 +255,8 @@ class orbitfilter:
     # return closest monthly calibration orbit
     def get_previous_monthly(self, orbit):
         delta = self.monthlies - (orbit-1) # 2 orbits after eachother, so skip one.
-        idx = numpy.where(delta < 0)
-        if numpy.isscalar(idx):
+        idx = np.where(delta < 0)
+        if np.isscalar(idx):
             return self.monthlies[idx]
         elif idx[0].size == 0:
             # no earlier monthly found, return given orbit
@@ -268,8 +268,8 @@ class orbitfilter:
     # return closest monthly calibration orbit
     def get_next_monthly(self, orbit):
         delta = self.monthlies - (orbit+1) # 2 orbits after eachother, so skip one. 
-        idx = numpy.where(delta > 0)
-        if numpy.isscalar(idx):
+        idx = np.where(delta > 0)
+        if np.isscalar(idx):
             #print("scal")
             return self.monthlies[idx]
         elif idx[0].size == 0:
@@ -325,8 +325,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
 
     if in_orbitlist is None:
         if len(orbitrange) is not 2:
-            print('read_extracted_states: orbitrange should have 2 elements')
-            return
+            raise Exception('orbitrange should have 2 elements')
 
     dict = {}
 
@@ -338,18 +337,17 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     gid = fid["State_"+str('%02d'%state_id)] # generates an exception
     mt_did = gid['metaTable']
     orbitlist = (gid['orbitList'])[:]
+    #print(orbitlist)
     if in_orbitlist is not None:
         #metaindx = orbitlist = in_orbitlist
-        metaindx = numpy.in1d(orbitlist, in_orbitlist)
+        metaindx = np.in1d(orbitlist, in_orbitlist)
     else:
         #print('orbitrange=', orbitrange)
         metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-        #print(metaindx)
+        #print(metaindx, metaindx[0].size, np.sum(metaindx))
 
-    if metaindx[0].size is 0:
-        print('read_extracted_states: orbit range not present in database')
-        dict['status'] = -1
-        return dict
+    if np.sum(metaindx) == 0:
+        raise Exception('orbit range not present in database')
 
     mtbl = mt_did[metaindx]
     dict['mtbl'] = mtbl
@@ -363,7 +361,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
         ds_did       = gid['readoutNoise']
         readoutNoise = ds_did[metaindx,:]
         ds_did       = gid['readoutCount']
-        readoutNoise /= numpy.sqrt(ds_did[metaindx,:])
+        readoutNoise /= np.sqrt(ds_did[metaindx,:])
         readoutNoise *= 1.4826 # sigma = MAD * K 
         dict['readoutNoise'] = readoutNoise
 
@@ -383,12 +381,12 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     cluspets = clusconf['pet'][:]
     cluscoad = clusconf['coaddf'][:]
     n_defchange = orbit_start.size 
-    pet = numpy.empty(1024)
-    coadd = numpy.empty(1024)
+    pet = np.empty(1024)
+    coadd = np.empty(1024)
     if n_defchange is 1:
         orbit_end = [100000]
     if n_defchange > 1:
-        orbit_end = numpy.append(numpy.delete(orbit_start,0,0), 100000)
+        orbit_end = np.append(np.delete(orbit_start,0,0), 100000)
     if n_defchange is 0:
         print("oh noes!")
         return(dict)
@@ -406,7 +404,6 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     dict['coadd'] = coadd
 
     fid.close()
-    dict['status'] = 0
     return(dict)
 
 # reads extracted state executions from database (CH8 only)
@@ -414,8 +411,7 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
 
     if in_orbitlist is None:
         if len(orbitrange) is not 2:
-            print('read_extracted_states: orbitrange should have 2 elements')
-            return
+            raise Exception('orbitrange should have 2 elements')
 
     dict = {}
 
@@ -429,16 +425,14 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
     orbitlist = (gid['orbitList'])[:]
     if in_orbitlist is not None:
         #metaindx = orbitlist = in_orbitlist
-        metaindx = numpy.in1d(orbitlist, in_orbitlist)
+        metaindx = np.in1d(orbitlist, in_orbitlist)
     else:
         #print('orbitrange=', orbitrange)
         metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
         #print(metaindx)
 
-    if metaindx[0].size is 0:
-        print('read_extracted_states: orbit range not present in database')
-        dict['status'] = -1
-        return dict
+    if np.sum(metaindx) == 0:
+        raise Exception('orbit range not present in database')
 
     mtbl = mt_did[metaindx]
     dict['mtbl'] = mtbl
@@ -457,7 +451,7 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
         readoutNoise = ds_did[metaindx,7*1024:]
         if errorInTheMean:
             ds_did       = gid['readoutCount']
-            readoutNoise /= numpy.sqrt(ds_did[metaindx,7*1024:])
+            readoutNoise /= np.sqrt(ds_did[metaindx,7*1024:])
         readoutNoise *= 1.4826 # sigma = MAD * K 
         dict['readoutNoise'] = readoutNoise
 
@@ -477,13 +471,13 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
     cluspets = clusconf['pet'][:]
     cluscoad = clusconf['coaddf'][:]
     n_defchange = orbit_start.size 
-    pet = numpy.empty(1024)
-    coadd = numpy.empty(1024)
+    pet = np.empty(1024)
+    coadd = np.empty(1024)
     #print("CLUSPETS=", cluspets.shape, cluspets)
     if n_defchange is 1:
         orbit_end = [100000]
     if n_defchange > 1:
-        orbit_end = numpy.append(orbit_start[1:], 100000)
+        orbit_end = np.append(orbit_start[1:], 100000)
     if n_defchange is 0:
         print("oh noes!")
         return(dict)
@@ -502,14 +496,26 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
     dict['coadd'] = coadd
 
     fid.close()
-    dict['status'] = 0
     return(dict)
+
+def get_closest_state_exec(orbit, stateid, calib_db, **kwargs):
+    fid = h5py.File(calib_db, 'r') # generates an exception
+    gid = fid["State_"+str('%02d'%stateid)] # generates an exception
+    mt_did = gid['metaTable']
+    orbitlist = (gid['orbitList'])[:]
+    idx = np.argmin(np.abs(orbitlist[:] - orbit))
+    orbit_ = orbitlist[idx]
+    print("FOUND:", orbit_)
+    fid.close()
+    return read_extracted_states_([orbit_,orbit_], stateid, calib_db, **kwargs)
+
+#-- main -----------------------------------------------------------------------
 
 # test function. not a unit test.. yet
 if __name__ == '__main__':
     print("\norbit filter test")
     filt = orbitfilter()
-    ra = numpy.arange(51000)
+    ra = np.arange(51000)
     mo_mask = filt.get_monthly_orbit_filter(ra)
     qu_mask = filt.get_quality_orbit_filter(ra)
     ra2 = ra[mo_mask]
@@ -520,7 +526,7 @@ if __name__ == '__main__':
 
     print("\nmemory correction test")
     mc = MemCorrector()
-    a = numpy.arange(8192)*4
+    a = np.arange(8192)*4
     b = mc.correct(a)
     print(b[0:1024])
     print(b[1024:2*1024])
