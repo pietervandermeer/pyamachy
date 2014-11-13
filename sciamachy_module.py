@@ -415,6 +415,8 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
 
     dict = {}
 
+    dict["orbit_range"] = orbitrange
+
     #
     # obtain indices to entries of the requested orbit and state
     #

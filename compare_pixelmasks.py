@@ -3,6 +3,8 @@ from __future__ import print_function, division
 import numpy as np
 import h5py
 
+from sciamachy_module import get_closest_state_exec
+
 class Mask:
 
     def __init__(self):
@@ -141,7 +143,7 @@ def print_new_dead_new_alive():
 
     return
 
-def print_criteria(orbit):
+def print_criteria(orbit, pixnr):
     m = Mask()
 
     #
@@ -164,9 +166,7 @@ def print_criteria(orbit):
         raise Exception("orbit not in orbital mask")
 
     i = np.argmax(idx)
-    print(i)
-
-    pixnr = 613+7*1024
+    print("i=",i)
 
     ds_combined = fid[grpname+"combined"]
     print(ds_combined[pixnr,i])
@@ -195,6 +195,142 @@ def print_criteria(orbit):
 
     return
 
+def print_nr_ppg(orbit):
+
+    dictwls = get_closest_state_exec(orbit, 61, "/SCIA/SDMF31/sdmf_extract_calib.h5", readoutMean=True)
+    orbit_range = dictwls["orbit_range"]
+    orbit = orbit_range[0]
+    print("closest wls orbit=", orbit)
+
+    m = Mask()
+
+    #
+    # first just print combined smoothmask
+    #
+
+    m.load_ascii(orbit)
+    print(np.where(m.mask))
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid = h5py.File(fname, "r")
+    grpname = "orbitalMask/"
+    ds_orbits = fid[grpname+"orbitList"]
+
+    orbits = ds_orbits[:]
+    #print(orbits)
+
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+
+    i = np.argmax(idx)
+    print("i=",i)
+
+    ds_ppg = fid[grpname+"pixelGain"]
+    ppg_chan8 = ds_ppg[7*1024:,i]
+    print("ppg", np.sum(ppg_chan8), np.where(ppg_chan8))
+
+    return
+
+def print_dark(orbit, pixnr):
+
+    #import matplotlib.pyplot as plt
+
+    fname = "/SCIA/SDMF30/sdmf_dark.h5"
+    fid = h5py.File(fname, "r")
+    ds_orbits = fid["orbitList"]
+
+    orbits = ds_orbits[:]
+    #print(orbits)
+
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+
+    i = np.argmax(idx)
+    print("i=",i)
+    ds_ao = fid["analogOffset"]
+    ds_aoerr = fid["analogOffsetError"]
+    ds_dc = fid["darkCurrent"]
+    ds_dcerr = fid["darkCurrentError"]
+    ds_chi = fid["chiSquareFit"]
+
+    print("dark=",ds_dc[pixnr,i])
+    print("ao=",ds_ao[pixnr,i])
+    print("chi=",ds_chi[pixnr,i])
+
+    # plt.cla()
+    # plt.plot(ds_dc[pixnr,i])
+    # plt.show()
+
+    return
+
+def print_noise(orbit, pixnr):
+    fname = "/SCIA/SDMF31/pieter/noise.h5"
+    fid = h5py.File(fname, "r")
+
+    ds_orbits = fid["pet1.0/orbits"]
+    orbits = ds_orbits[:]
+    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
+    orbits = np.unique(orbits)
+    #print(orbits)
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i = np.argmax(idx)
+    print("i=",i)
+    ds_noise = fid["pet1.0/noise"]
+    print("noise(1.0)=", ds_noise[i, pixnr-7*1024])
+
+    ds_orbits = fid["pet0.5/orbits"]
+    orbits = ds_orbits[:]
+    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
+    orbits = np.unique(orbits)
+    #print(orbits)
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i = np.argmax(idx)
+    print("i=",i)
+    ds_noise = fid["pet0.5/noise"]
+    print("noise(0.5)=", ds_noise[i, pixnr-7*1024])
+
+    ds_orbits = fid["pet0.125/orbits"]
+    orbits = ds_orbits[:]
+    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
+    orbits = np.unique(orbits)
+    #print(orbits)
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i = np.argmax(idx)
+    print("i=",i)
+    ds_noise = fid["pet0.125/noise"]
+    print("noise(0.125)=", ds_noise[i, pixnr-7*1024])
+
+    return
+
+def print_vardark(orbit, pixnr):
+    fname = "/SCIA/SDMF31/pieter/vardark_long.h5"
+    fid = h5py.File(fname, "r")
+
+    ds_orbits = fid["dim_orbit"]
+    orbits = ds_orbits[:]
+    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
+    orbits = np.unique(orbits)
+    #print(orbits)
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i = np.argmax(idx)
+    print("i=",i)
+    ds_dark = fid["varDark"]
+    print("dark (sdmf3.2)=", ds_dark[i, 0, pixnr-7*1024])
+    ds_un = fid["uncertainties"]
+    print("uncertainty=", ds_un[i, pixnr-7*1024])
+
+    return
+
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -203,7 +339,13 @@ if __name__ == "__main__":
 
     #print_new_dead_new_alive()
     #print_dead_quality()
-    print_criteria(22000)
+    orbit = 42030
+    pixnr = 592+7*1024
+    print_nr_ppg(orbit)
+    print_criteria(orbit, pixnr)
+    print_dark(orbit, pixnr)
+    print_noise(orbit, pixnr)
+    print_vardark(orbit, pixnr)
 
     # m2 = Mask()
     # m2.load_ascii(49245)

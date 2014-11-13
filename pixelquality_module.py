@@ -10,12 +10,64 @@ import h5py
 import logging
 import datetime
 import warnings
+import scipy.signal #.medfilt
 warnings.simplefilter("error") # warnings to errors
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark_module import load_varkdark_orbit
 from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec
+
+#-- functions ------------------------------------------------------------------
+
+def calculate_light_figure(spec, verbose=False, give_smooth=False):
+    """
+    Calculate sun or wls figure. 
+    Smooth (dark and nonlin corrected) spectrum over the pixelrange and check how much the actual pixel readout deviates.
+    Deviation is handled absolute-log: exp(-abs(log(smooth/actual)))
+    making 0 worst and 1 best case and 1/figure the factor it deviates. 
+
+    Parameters
+    ----------
+
+    spec : numpy array, 1D, float
+        spectrum (corrected for dark and non-linearity)
+    verbose : bool, optional
+        if set, this function prints out the worst pixels sorted by descending severity
+
+    Returns
+    -------
+
+    reldev : numpy array, dimensions of `spec', float
+        quality figures for every pixel in `spec'
+    smooth : numpy array, dimensions of `spec', float, optional
+        median-smoothed version of `spec'
+
+    """
+    smooth = scipy.signal.medfilt(spec)
+    raw_figure = spec / smooth
+    reldev = np.exp(-np.abs(np.log(raw_figure)))
+
+    if verbose:
+        sorted_ = np.sort(reldev)
+        sorted_pixnr = np.argsort(reldev)
+        for i in range(10): # the 10 worst
+            print(sorted_pixnr[i], sorted_[i])
+
+    if give_smooth:
+        return reldev, smooth
+    else:
+        return reldev
+
+def plot_quality_number(spec, thresh):
+    """ plot relative deviation and threshold of given channel of pixels """
+    thresh_rel = np.array([thresh, thresh])
+    thres_x = [0, spec.size]
+    thres_y = 1./thresh_rel
+    plt.cla()
+    plt.plot(np.arange(spec.size), spec, 'bo', thres_x, thres_y, 'k-')
+    plt.show()
+    return 
 
 class PixelQuality:
 
@@ -142,6 +194,8 @@ class PixelQuality:
         dict['w_noise'] = float(parser.get('Processor','w_noise'))
         dict['w_sun'] = float(parser.get('Processor','w_sun'))
         dict['w_wls'] = float(parser.get('Processor','w_wls'))
+        dict['thresh_sun'] = float(parser.get('Processor','thresh_sun'))
+        dict['thresh_wls'] = float(parser.get('Processor','thresh_wls'))
         return dict
 
     def clip_figure(self, figure):
@@ -245,6 +299,49 @@ class PixelQuality:
 
         self.invalid_mask = (analogoffset == 0) | (np.isnan(analogoffset)) | (darkcurrent == 0) | (np.isnan(darkcurrent))
 
+        #
+        # Check for violation of the absolute dark current values
+        # These are expressed as a positive and negative saturation time
+        # For negative dark currents the threshold defines that the pixel is 
+        # not allowed to saturate the adc at adc=0
+        # so from the analog offset towards zero within a certain time
+        # For positive dark currents to pixel is not supposed to saturate the 
+        # adc from analog offset to its maximum value within a certain exposure 
+        # time
+        #
+        # uses: maxadc: max ADC read-out (BU)
+        #       sig_max: max signal per channel excluding AO and LC. over the 
+        #                sahara, BU/s
+        #
+        # the quality number variant uses scaling of low and high end of the range
+        # to get a linearly varying number between [0..1]
+        #
+
+        darkcursat_figure = np.empty((1024,), dtype=np.float32)
+        exposuretime_max = 1.0 # for channel 8
+        maxadc = 65535
+        sig_max = 6000 # max BU/s over sahara. of course this may depend on sensitivity
+        lowbg = (sig_max - analogoffset) / exposuretime_max # low thermal background (can be negative)
+        highbg_s = (maxadc-analogoffset-sig_max)/exposuretime_max # highest possible thermal background with high signal
+        highbg = (maxadc-analogoffset)/exposuretime_max # highest possible thermal background
+        darkcurrent_ = np.nan_to_num(darkcurrent)
+        darkcursat = (darkcurrent_ < lowbg) | (darkcurrent_ > highbg) # flags (only used for reference..)
+        for pixnr in range(1024):
+            if self.invalid_mask[pixnr]:
+                # invalid pixels are explicitly put to nan here, because this figure cannot be computed for this pixel
+                darkcursat_figure[pixnr] = np.nan
+                continue
+            if darkcurrent[pixnr] > highbg_s[pixnr]:
+                q = 1.0 - ( (darkcurrent[pixnr] - highbg_s[pixnr]) / (maxadc - highbg[pixnr]) )
+            elif darkcurrent[pixnr] < lowbg[pixnr]:
+                q = 1.0 - ( (lowbg[pixnr] - darkcurrent[pixnr]) / sig_max )
+            else:
+                q = 1.0
+            if q < 0:
+                q = 0
+            darkcursat_figure[pixnr] = q
+            print(pixnr, darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
+
         # let's just take a single exposure time to begin with
 
         if "1.0" in readoutnoise:
@@ -329,9 +426,6 @@ class PixelQuality:
         # darkcurrent_s = darkcurrent_s[0,0,:].flatten()
         # analogoffset_s = analogoffset_s.flatten()
 
-        import matplotlib.pyplot as plt
-        pixnr = 592
-
         #
         # compute wls figure
         #
@@ -339,17 +433,9 @@ class PixelQuality:
         dictwls = get_closest_state_exec(orbit, 61, calib_db, readoutMean=True)
         print("wls pets = ", dictwls['pet'])
         wls_readout = self.nlc.correct_ch8(dictwls['readoutMean']).flatten()
-        print(wls_readout.shape)
         wls_readout -= darkcurrent31 * dictwls['pet'] + analogoffset31
-        print(wls_readout.shape)
-        self.wls_figure = wls_readout / 100.
-        print(self.wls_figure.shape)
-        plt.cla()
-        #ax = plt.add_subplot(2,1,1)
-#        plt.plot(np.arange(1024), wls_readout, 'bo', np.arange(1024), analogoffset31, 'go')
-        plt.plot(np.arange(1024), wls_readout, 'bo', [0,1024], [100,100], 'k-')
-        #ax.set_yscale('log')
-        plt.show()
+        self.wls_reldev, smooth_wls = calculate_light_figure(wls_readout, verbose=True, give_smooth=True)
+        plot_quality_number(self.wls_reldev, self.cfg["thresh_wls"])
 
         #
         # compute sun figure
@@ -359,10 +445,9 @@ class PixelQuality:
         print("sun pets = ", dictsun['pet'])
         sun_readout = self.nlc.correct_ch8(dictsun['readoutMean']).flatten()
         sun_readout -= darkcurrent31 * dictsun['pet'] + analogoffset31
-        self.sun_figure = sun_readout / 100.
-        plt.cla()
-        plt.plot(np.arange(1024), sun_readout, 'ro', [0,1024], [100,100], 'k-')
-        plt.show()
+        self.sun_reldev, smooth_sun = calculate_light_figure(sun_readout, verbose=True, give_smooth=True)
+        # relative threshold
+        plot_quality_number(self.sun_reldev, self.cfg["thresh_sun"])
 
         #
         # combine the criteria using a weighted sum 
@@ -371,7 +456,9 @@ class PixelQuality:
         print(self.dc_err_figure.shape)
         print(self.residual_figure.shape)
         print(self.noise_figure.shape)
-        self.combined = w_err*self.dc_err_figure + w_res*self.residual_figure + w_noise*self.noise_figure
+        # completely omitting these since they are completely covered by noise and dc sat
+        # w_err*self.dc_err_figure + w_res*self.residual_figure 
+        self.combined = w_noise*self.noise_figure
         self.combined = self.combined.flatten()
         #print(self.combined, self.combined.shape, self.combined.dtype)
         self.combined *= np.logical_not(self.invalid_mask)
@@ -388,7 +475,7 @@ class PixelQuality:
             self.combined[idx] = 1
         self.combined = 1 - self.combined
 
-        return        
+        return
 
     def create_figure_dset(self, f, name):
         """ creates a new figure (float per pixel) array in the database """
@@ -731,7 +818,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality()
-    orbit = 22000
+    orbit = 32000
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)
