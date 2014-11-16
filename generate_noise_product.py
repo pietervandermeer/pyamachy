@@ -120,6 +120,11 @@ class Noise:
 
         self.noise = noise_out
 
+        # we want only one entry per orbit in the database..
+        self.orbits = np.unique(self.orbits)
+
+        return
+
     def get_groupname(self):
         return "pet"+str(self.pet)
 
@@ -172,7 +177,7 @@ if __name__ == '__main__':
 
     orbit_range = [3300,53300]
 #    orbit_range = [30000,31000]
-    db_fname = "noise.h5"
+    db_fname = "noise_.h5"
 
     # NOTE: entire db will get truncated!
     f = h5py.File(db_fname, "w")

@@ -15,8 +15,8 @@ warnings.simplefilter("error") # warnings to errors
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
-from vardark_module import load_varkdark_orbit
-from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec
+from vardark_module import load_varkdark_orbit, read_ch8_darks
+from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr
 
 #-- functions ------------------------------------------------------------------
 
@@ -148,7 +148,57 @@ class PixelQuality:
 
         self.nlc = NonlinCorrector()
 
+        #
+        # open noise database
+        #
+
+        self.noise_fid = h5py.File("noise.h5", "r")
+        self.ds_noise10 = self.noise_fid["pet1.0/noise"]
+        self.ds_orbits10 = self.noise_fid["pet1.0/orbits"]
+        self.ds_noise05 = self.noise_fid["pet0.5/noise"]
+        self.ds_orbits05 = self.noise_fid["pet0.5/orbits"]
+        self.ds_noise0125 = self.noise_fid["pet0.125/noise"]
+        self.ds_orbits0125 = self.noise_fid["pet0.125/orbits"]
+
         return
+
+    def get_noise(self, orbit, pet):
+        if pet == 0.125:
+            return self.get_noise0125(orbit)
+        if pet == 0.5:
+            return self.get_noise05(orbit)
+        if pet == 1.0:
+            return self.get_noise10(orbit)
+
+    def get_noise10(self, orbit):
+        """ 
+        get calibrated noise for orbit. 
+        """
+        idx = self.ds_orbits10[:] == orbit
+        if np.sum(idx) == 0:
+            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+        idx = np.argmax(idx)
+        return self.ds_noise10[idx,:]
+
+    def get_noise05(self, orbit):
+        """ 
+        get calibrated noise for orbit. 
+        """
+        idx = self.ds_orbits10[:] == orbit
+        if np.sum(idx) == 0:
+            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+        idx = np.argmax(idx)
+        return self.ds_noise10[idx,:]
+
+    def get_noise0125(self, orbit):
+        """ 
+        get calibrated noise for orbit. 
+        """
+        idx = self.ds_orbits10[:] == orbit
+        if np.sum(idx) == 0:
+            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+        idx = np.argmax(idx)
+        return self.ds_noise10[idx,:]
 
     def get_config(self, config_file):
         """ 
@@ -273,23 +323,18 @@ class PixelQuality:
         darkpets = (0.125, 0.5, 1.0) # sun, nadir, nadir
         for pet in darkpets:
             darkid = get_darkstateid(pet, orbit)
-            state_string = "State_"+format(darkid, "02d")
+            jds, readouts, noise, tdet, pets_, coadd = read_ch8_darks([orbit,orbit], darkid)
             pet_string = str(pet)
-            gextract = fextract[state_string]
-            readoutnoise_dset = gextract["readoutNoise"]
-            readoutmean_dset = gextract["readoutMean"]
-            # TODO: nonlinearity correction
-            # TODO: SDMF3.1 noise is wrong, need to use SDMF3.0 or my own noise product derived from this!
-            orbitlist = gextract["orbitList"]
-            idx = np.where(orbitlist[:] == orbit)
-            if idx[0].size == 0:
-                logging.warning("no dark data for orbit %d!" % orbit)
-                self.invalid_mask = np.ones(self.num_chanpixels, dtype=np.bool)
-                self.combined = np.empty((self.num_chanpixels,), dtype=np.float32)
-                self.combined[:] = np.nan
-                return
-            readoutnoise[pet_string] = readoutnoise_dset[idx[0],:]
-            readoutmean[pet_string] = readoutmean_dset[idx[0],:]
+            readoutmean[pet_string] = readouts
+            readoutnoise[pet_string] = noise #self.get_noise(orbit, pet)
+            print(readoutmean[pet_string].shape)
+
+# TODO: exception handling? 
+#                logging.warning("no dark data for orbit %d!" % orbit)
+#                self.invalid_mask = np.ones(self.num_chanpixels, dtype=np.bool)
+#                self.combined = np.empty((self.num_chanpixels,), dtype=np.float32)
+#                self.combined[:] = np.nan
+#                return
 
         #
         # check invalid data points in the dark current calculation
@@ -318,10 +363,10 @@ class PixelQuality:
         #
 
         darkcursat_figure = np.empty((1024,), dtype=np.float32)
-        exposuretime_max = 1.0 # for channel 8
+        exposuretime_max = 1.0-petcorr # for channel 8
         maxadc = 65535
         sig_max = 6000 # max BU/s over sahara. of course this may depend on sensitivity
-        lowbg = (sig_max - analogoffset) / exposuretime_max # low thermal background (can be negative)
+        lowbg = -analogoffset / exposuretime_max # low thermal background (can be negative)
         highbg_s = (maxadc-analogoffset-sig_max)/exposuretime_max # highest possible thermal background with high signal
         highbg = (maxadc-analogoffset)/exposuretime_max # highest possible thermal background
         darkcurrent_ = np.nan_to_num(darkcurrent)
@@ -334,30 +379,30 @@ class PixelQuality:
             if darkcurrent[pixnr] > highbg_s[pixnr]:
                 q = 1.0 - ( (darkcurrent[pixnr] - highbg_s[pixnr]) / (maxadc - highbg[pixnr]) )
             elif darkcurrent[pixnr] < lowbg[pixnr]:
-                q = 1.0 - ( (lowbg[pixnr] - darkcurrent[pixnr]) / sig_max )
+                q = 1.0 - ( (lowbg[pixnr] - darkcurrent[pixnr]) / lowbg[pixnr] )
             else:
                 q = 1.0
             if q < 0:
                 q = 0
             darkcursat_figure[pixnr] = q
-            print(pixnr, darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
+            #print(pixnr, darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
 
         # let's just take a single exposure time to begin with
 
-        if "1.0" in readoutnoise:
-            if readoutnoise["1.0"].ndim != 2:
-                print("ERROR, wrong nr of dimension!", readoutnoise["1.0"], readoutnoise["1.0"].shape)
-                self.combined = np.ones(self.num_chanpixels)
-                return
-            else:
-                self.noise_figure = np.mean(readoutnoise["1.0"], axis=0)[7*1024:]
-        else:
-            self.noise_figure = np.ones(self.num_chanpixels) * np.nan
+        self.noise_figure = self.get_noise10(orbit)
+        #else:
+        #    self.noise_figure = np.ones(self.num_chanpixels) * np.nan
+
+        max_noise = 1000
+        self.noise_figure = np.nan_to_num(self.noise_figure.flatten())
+        idx = self.noise_figure > max_noise
+        self.noise_figure[idx] = max_noise
         # replace bogus 0 value with nan
         idx = self.noise_figure == 0
-        if np.sum(idx) > 0:
-            self.noise_figure[idx] = np.nan
-        self.noise_figure = 1024 / self.noise_figure.flatten()
+        self.noise_figure[idx] = np.nan
+        self.noise_figure = (max_noise - self.noise_figure) / max_noise
+        for pixnr in range(1024):
+            print(pixnr, self.noise_figure[pixnr])
 
         #
         # check whether the darkcurrent residuals exceed their error
@@ -379,9 +424,9 @@ class PixelQuality:
                 print("ERROR, wrong nr of dimension!", readoutmean[pet_string], readoutmean[pet_string].shape)
                 self.combined = np.ones(self.num_chanpixels)
                 return
-            corrmean = readoutmean[pet_string][:,7*1024:8*1024] 
+            corrmean = readoutmean[pet_string] 
             corrmean -= darkcurrent * pets + analogoffset
-            corrnoise = readoutnoise[pet_string][:,7*1024:8*1024]
+            corrnoise = readoutnoise[pet_string]
             #print(corrmean)
             #print(corrmean.shape, corrnoise.shape, pets.shape, darkcurrent.shape, analogoffset.shape)
 
@@ -400,7 +445,7 @@ class PixelQuality:
                 #print(goodnoise.shape, meanrow)
                 tmp[goodnoise] += abs(meanrow[goodnoise] / noiserow[goodnoise])
                 tmp_count += goodnoise
-                i_row+=1
+                i_row += 1
                 
         self.residual_figure = np.sqrt(tmp.flatten()) / np.sqrt(20)
         self.residual_figure = self.clip_figure(self.residual_figure)
@@ -435,7 +480,7 @@ class PixelQuality:
         wls_readout = self.nlc.correct_ch8(dictwls['readoutMean']).flatten()
         wls_readout -= darkcurrent31 * dictwls['pet'] + analogoffset31
         self.wls_reldev, smooth_wls = calculate_light_figure(wls_readout, verbose=True, give_smooth=True)
-        plot_quality_number(self.wls_reldev, self.cfg["thresh_wls"])
+        #plot_quality_number(self.wls_reldev, self.cfg["thresh_wls"])
 
         #
         # compute sun figure
@@ -447,7 +492,7 @@ class PixelQuality:
         sun_readout -= darkcurrent31 * dictsun['pet'] + analogoffset31
         self.sun_reldev, smooth_sun = calculate_light_figure(sun_readout, verbose=True, give_smooth=True)
         # relative threshold
-        plot_quality_number(self.sun_reldev, self.cfg["thresh_sun"])
+        #plot_quality_number(self.sun_reldev, self.cfg["thresh_sun"])
 
         #
         # combine the criteria using a weighted sum 
@@ -457,23 +502,28 @@ class PixelQuality:
         print(self.residual_figure.shape)
         print(self.noise_figure.shape)
         # completely omitting these since they are completely covered by noise and dc sat
-        # w_err*self.dc_err_figure + w_res*self.residual_figure 
-        self.combined = w_noise*self.noise_figure
+        self.combined = w_err*self.dc_err_figure + w_res*self.residual_figure 
+        self.combined *= self.noise_figure 
         self.combined = self.combined.flatten()
         #print(self.combined, self.combined.shape, self.combined.dtype)
         self.combined *= np.logical_not(self.invalid_mask)
-        self.combined = self.combined*w_sun + (1.-w_sun)*self.combined*self.sun_figure
-        self.combined = self.combined*w_wls + (1.-w_wls)*self.combined*self.wls_figure
+        self.combined *= self.sun_reldev
+        self.combined *= self.wls_reldev
 
         #
         # NaN is bogus => quality = 0, clip to range [0..1], and reverse (in preparation for pixelmask (1:bad, 0:good))
         #
 
-        self.combined = np.nan_to_num(self.combined)
-        idx = self.combined > 1
-        if (np.sum(idx) > 0):
-            self.combined[idx] = 1
-        self.combined = 1 - self.combined
+        self.combined_flags = np.logical_xor(True, (np.nan_to_num(self.combined) > 0.1))
+        for pixnr in range(1024):
+            print(pixnr, self.combined_flags[pixnr], 
+                         self.combined[pixnr], 
+                         self.invalid_mask[pixnr], 
+                         self.noise_figure[pixnr], 
+                         self.residual_figure[pixnr], 
+                         self.dc_err_figure[pixnr],
+                         self.wls_reldev[pixnr], 
+                         self.sun_reldev[pixnr])
 
         return
 
@@ -553,6 +603,8 @@ class PixelQuality:
             f.create_dataset("entryDate", (0,), dtype='S20', 
                              chunks=(1024,), compression='gzip', 
                              compression_opts=3, maxshape=(None,))
+            self.create_figure_dset(f, "wlsResponse")
+            self.create_figure_dset(f, "sunResponse")
             self.create_figure_dset(f, "darkError")
             self.create_figure_dset(f, "darkResidual")
             self.create_figure_dset(f, "noise")
@@ -583,6 +635,10 @@ class PixelQuality:
                 dset[idx,:] = self.dc_err_figure
                 dset = f['darkResidual']
                 dset[idx,:] = self.residual_figure
+                dset = f['sunResponse']
+                dset[idx,:] = self.sun_reldev
+                dset = f['wlsResponse']
+                dset[idx,:] = self.wls_reldev
                 dset = f['noise']
                 dset[idx,:] = self.noise_figure
                 dset = f['invalid']
@@ -606,6 +662,12 @@ class PixelQuality:
                 dset = f['darkResidual']
                 dset.resize((self.n_write, self.num_chanpixels))
                 dset[self.n_write-1,:] = self.residual_figure
+                dset = f['sunResponse']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.sun_reldev
+                dset = f['wlsResponse']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.wls_reldev
                 dset = f['noise']
                 dset.resize((self.n_write, self.num_chanpixels))
                 dset[self.n_write-1,:] = self.noise_figure
@@ -818,7 +880,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality()
-    orbit = 32000
+    orbit = 42000
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)
