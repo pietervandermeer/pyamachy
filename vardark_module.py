@@ -26,7 +26,7 @@ from numpy import cos, pi
 from kapteyn import kmpfit
 import matplotlib.pyplot as plt
 
-from ranges import remove_overlap, is_in_range
+from ranges import remove_overlap, is_in_range, merge_ranges
 from envisat import PhaseConverter
 from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid, read_extracted_states_
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
@@ -319,8 +319,12 @@ class AllDarks():
         """
         register orbit range and automatically remove overlap
         """
-        self.range_list.append(orbit_range)
+        self.range_list.append((orbit_range[0], orbit_range[1])) # make sure we're entering tuples into the list!
+        print("post append:", self.range_list)
         self.range_list = remove_overlap(self.range_list)
+        print("post remove_overlap:", self.range_list)
+        self.range_list = merge_ranges(self.range_list)
+        print("post merge:", self.range_list)
         return
 
     def is_registered(self, orbit_range):
@@ -364,7 +368,7 @@ class AllDarks():
 
     def _lumplr(self, orbit_range):
         """
-        lump with right side extended by one orbit. (because of orbit slicing in sdmf extract)
+        lump with left and right side extended by one orbit. (because of orbit slicing in sdmf extract)
         """
         self._register_range(orbit_range)
         self._lump([orbit_range[0]-1, orbit_range[1]+1])
@@ -418,10 +422,12 @@ class AllDarks():
             if first_orbit < 43362 and last_orbit >= 43362:
                 print("lump upto 43361")
                 self._lumpl([first_orbit, 43361])
+                print("LO???",self.range_list)
                 print("lump from 43362")
                 self._lumpr([43362, last_orbit])
+                print("HI???",self.range_list)
             else:
-                print("lump")
+                print("buffer_range(): lumplr", orbit_range)
                 self._lumplr(orbit_range)
             self._finalize()
 
