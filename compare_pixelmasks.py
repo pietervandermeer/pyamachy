@@ -143,7 +143,51 @@ def print_new_dead_new_alive():
 
     return
 
-def print_criteria(orbit, pixnr):
+def print_criteria32(orbit, pixnr):
+    """ 
+    Print flagging criteria for SDMF3.0.
+    """
+    pixnr -= 7*1024
+    fname = "sdmf_pyxelmask.h5"
+    fid = h5py.File(fname, "r")
+    grpname = "" #orbitalMask/" # maybe in the future
+    ds_orbits = fid[grpname+"orbits"]
+
+    orbits = ds_orbits[:]
+    #print(orbits)
+
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+
+    i = np.argmax(idx)
+    print("i=",i)
+
+    ds_combinedf = fid[grpname+"combinedFlag"]
+    print("flag",ds_combinedf[i,pixnr])
+    ds_combined = fid[grpname+"combined"]
+    print("q",ds_combined[i,pixnr])
+    ds_inv = fid[grpname+"invalid"]
+    print("inv",ds_inv[i,pixnr])
+    ds_dc = fid[grpname+"saturation"]
+    print("sat",ds_dc[i,pixnr])
+    ds_noise = fid[grpname+"noise"]
+    print("noise",ds_noise[i,pixnr])
+    ds_res = fid[grpname+"darkResidual"]
+    print("res",ds_res[i,pixnr])
+    ds_res = fid[grpname+"darkError"]
+    print("error",ds_res[i,pixnr])
+    ds_sun = fid[grpname+"sunResponse"]
+    print("sun",ds_sun[i,pixnr])
+    ds_wls = fid[grpname+"wlsResponse"]
+    print("wls",ds_wls[i,pixnr])
+
+    return    
+
+def print_criteria30(orbit, pixnr):
+    """ 
+    Print flagging criteria for SDMF3.0.
+    """
     m = Mask()
 
     #
@@ -169,7 +213,7 @@ def print_criteria(orbit, pixnr):
     print("i=",i)
 
     ds_combined = fid[grpname+"combined"]
-    print(ds_combined[pixnr,i])
+    print("combined flag",ds_combined[pixnr,i])
     ds_ao = fid[grpname+"analogOffset"]
     print("ao",ds_ao[pixnr,i])
     ds_aoerr = fid[grpname+"analogOffsetError"]
@@ -221,7 +265,7 @@ def print_nr_ppg(orbit):
 
     idx = orbit == orbits
     if np.sum(idx) == 0:
-        raise Exception("orbit not in orbital mask")
+        raise Exception("orbit not in SDMF3.2 orbital mask")
 
     i = np.argmax(idx)
     print("i=",i)
@@ -245,7 +289,7 @@ def print_dark(orbit, pixnr):
 
     idx = orbit == orbits
     if np.sum(idx) == 0:
-        raise Exception("orbit not in orbital mask")
+        raise Exception("orbit not in SDMF3.0 orbital mask")
 
     i = np.argmax(idx)
     print("i=",i)
@@ -339,13 +383,14 @@ if __name__ == "__main__":
 
     #print_new_dead_new_alive()
     #print_dead_quality()
-    orbit = 42030
+    orbit = 42001
     pixnr = 592+7*1024
     print_nr_ppg(orbit)
-    print_criteria(orbit, pixnr)
+    print_criteria30(orbit, pixnr)
     print_dark(orbit, pixnr)
     print_noise(orbit, pixnr)
     print_vardark(orbit, pixnr)
+    print_criteria32(orbit, pixnr)
 
     # m2 = Mask()
     # m2.load_ascii(49245)

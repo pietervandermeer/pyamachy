@@ -45,8 +45,10 @@ def calculate_light_figure(spec, verbose=False, give_smooth=False):
 
     """
     smooth = scipy.signal.medfilt(spec)
-    raw_figure = spec / smooth
-    reldev = np.exp(-np.abs(np.log(raw_figure)))
+    raw_figure = np.abs(spec / smooth)
+    idx = (np.isfinite(raw_figure)) & (np.abs(raw_figure) != 0)
+    reldev = np.empty(spec.shape) + np.nan
+    reldev[idx] = np.exp(-np.abs(np.log(raw_figure[idx])))
 
     if verbose:
         sorted_ = np.sort(reldev)
@@ -200,6 +202,25 @@ class PixelQuality:
         idx = np.argmax(idx)
         return self.ds_noise10[idx,:]
 
+    def get_config_floats(self, tags, parser, part):
+        """
+        parse floating point variables from config and put them in a dict under the desired tags 
+        """
+        d = {}
+        for tag in tags:
+            d[tag] = float(parser.get(part, tag))
+        return d
+
+    def get_config_floatlists(self, tags, parser, part):
+        """
+        parse comma-separated lists of floats from config and put them in a dict under the desired tags 
+        """
+        d = {}
+        for tag in tags:
+            string = parser.get(part, tag)
+            d[tag] = [float(s) for s in string.split(',')]
+        return d
+
     def get_config(self, config_file):
         """ 
         load configuration from file 
@@ -219,37 +240,39 @@ class PixelQuality:
 
         parser=ConfigParser.SafeConfigParser()
         parser.readfp(config_file)
-        dict = {}
-        dict['db_dir'] = parser.get('Global','masterdirectory')
-        dict['extract_fname'] = parser.get('Global','extract_file')
-        dict['dark_fname'] = parser.get('Global','dark_file')
-        dict['pixelmask_fname'] = parser.get('Global','pixelmask_file')
-        dict['statedarkch6p_fname'] = parser.get('Global','statedarkch6p_file')
-        dict['statedarkch8_fname'] = parser.get('Global','statedarkch8_file')
-        dict['darklimbch6_fname'] = parser.get('Global','darklimbch6_file')
-        dict['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
-        dict['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
-        string = parser.get('Processor','dc_sat_time')
-        dict['dc_sat_time'] = [float(s) for s in string.split(',')]
-        string = parser.get('Processor','dc_err_thres')
-        dict['dc_err_thres'] = [float(s) for s in string.split(',')]
-        string = parser.get('Processor','res_thres')
-        dict['res_thres'] = [float(s) for s in string.split(',')]
-        string = parser.get('Processor','max_signal')
-        dict['max_signal'] = [float(s) for s in string.split(',')]
-        string = parser.get('Processor','deadflaggingstates')
-        dict['deadflaggingstates'] = [int(s) for s in string.split(',')]
-        dict['w_err'] = float(parser.get('Processor','w_err'))
-        dict['w_res'] = float(parser.get('Processor','w_res'))
-        dict['w_noise'] = float(parser.get('Processor','w_noise'))
-        dict['w_sun'] = float(parser.get('Processor','w_sun'))
-        dict['w_wls'] = float(parser.get('Processor','w_wls'))
-        dict['thresh_sun'] = float(parser.get('Processor','thresh_sun'))
-        dict['thresh_wls'] = float(parser.get('Processor','thresh_wls'))
-        return dict
+        d = {}
+
+        #
+        # parse file names
+        #
+
+        d['db_dir'] = parser.get('Global','masterdirectory')
+        d['extract_fname'] = parser.get('Global','extract_file')
+        d['dark_fname'] = parser.get('Global','dark_file')
+        d['pixelmask_fname'] = parser.get('Global','pixelmask_file')
+        d['statedarkch6p_fname'] = parser.get('Global','statedarkch6p_file')
+        d['statedarkch8_fname'] = parser.get('Global','statedarkch8_file')
+        d['darklimbch6_fname'] = parser.get('Global','darklimbch6_file')
+        d['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
+        d['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
+
+        #
+        # parse lists of floats.. useful for multi-channel configurations (although this class is single-channel.. it's left in for future)
+        #
+
+        floatlist_tags = ['dc_sat_time','dc_err_thres','res_thres','max_signal','deadflaggingstates']
+        proc_floatlists = self.get_config_floatlists(floatlist_tags, parser, 'Processor')
+
+        #
+        # parse floats (mostly thresholds and weights) used for channel 8 processing
+        #
+
+        float_tags = ['w_err','w_res','w_noise','w_sun','w_wls','thresh_sun','thresh_wls','max_noise']
+        proc_floats = self.get_config_floats(float_tags, parser, 'Processor')
+        return dict(d.items() + proc_floatlists.items() + proc_floats.items())
 
     def clip_figure(self, figure):
-        nonan_idx = np.logical_not(np.isnan(figure))
+        nonan_idx = np.isfinite(figure)
         if np.sum(nonan_idx) == 0:
             return figure # nan in nan out
         #print("nonan_idx=",nonan_idx)
@@ -282,6 +305,7 @@ class PixelQuality:
         w_noise = self.cfg['w_noise']
         w_sun = self.cfg['w_sun']
         w_wls = self.cfg['w_wls']
+        max_noise = self.cfg['max_noise']
 
         self.orbit = orbit
         darkids = self.cfg['deadflaggingstates']
@@ -362,7 +386,7 @@ class PixelQuality:
         # to get a linearly varying number between [0..1]
         #
 
-        darkcursat_figure = np.empty((1024,), dtype=np.float32)
+        self.darkcursat_figure = np.empty((1024,), dtype=np.float32)
         exposuretime_max = 1.0-petcorr # for channel 8
         maxadc = 65535
         sig_max = 6000 # max BU/s over sahara. of course this may depend on sensitivity
@@ -374,7 +398,7 @@ class PixelQuality:
         for pixnr in range(1024):
             if self.invalid_mask[pixnr]:
                 # invalid pixels are explicitly put to nan here, because this figure cannot be computed for this pixel
-                darkcursat_figure[pixnr] = np.nan
+                self.darkcursat_figure[pixnr] = np.nan
                 continue
             if darkcurrent[pixnr] > highbg_s[pixnr]:
                 q = 1.0 - ( (darkcurrent[pixnr] - highbg_s[pixnr]) / (maxadc - highbg[pixnr]) )
@@ -384,8 +408,8 @@ class PixelQuality:
                 q = 1.0
             if q < 0:
                 q = 0
-            darkcursat_figure[pixnr] = q
-            #print(pixnr, darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
+            self.darkcursat_figure[pixnr] = q
+            #print(pixnr, self.darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
 
         # let's just take a single exposure time to begin with
 
@@ -393,7 +417,6 @@ class PixelQuality:
         #else:
         #    self.noise_figure = np.ones(self.num_chanpixels) * np.nan
 
-        max_noise = 1000
         self.noise_figure = np.nan_to_num(self.noise_figure.flatten())
         idx = self.noise_figure > max_noise
         self.noise_figure[idx] = max_noise
@@ -421,7 +444,7 @@ class PixelQuality:
             
             pets = np.zeros(1024) + pet
             if readoutmean[pet_string].ndim != 2:
-                print("ERROR, wrong nr of dimension!", readoutmean[pet_string], readoutmean[pet_string].shape)
+                print("ERROR, wrong nr of dimensions!", readoutmean[pet_string], readoutmean[pet_string].shape)
                 self.combined = np.ones(self.num_chanpixels)
                 return
             corrmean = readoutmean[pet_string] 
@@ -447,7 +470,7 @@ class PixelQuality:
                 tmp_count += goodnoise
                 i_row += 1
                 
-        self.residual_figure = np.sqrt(tmp.flatten()) / np.sqrt(20)
+        self.residual_figure = np.sqrt(tmp.flatten() / 20) # TODO: divisor in config file
         self.residual_figure = self.clip_figure(self.residual_figure)
 
         #
@@ -456,7 +479,7 @@ class PixelQuality:
 
         self.dc_err_figure = np.abs(darkcurrent / uncertainty)
         print(self.dc_err_figure.shape)
-        self.dc_err_figure = self.dc_err_figure.flatten() / 5000 # empirical scalar to get range normalized to [0..1]
+        self.dc_err_figure = self.dc_err_figure.flatten() / 5000 # empirical scalar to get range normalized to [0..1], TODO: config file
         print(self.dc_err_figure.shape)
         self.dc_err_figure = self.clip_figure(self.dc_err_figure)
 
@@ -605,11 +628,13 @@ class PixelQuality:
                              compression_opts=3, maxshape=(None,))
             self.create_figure_dset(f, "wlsResponse")
             self.create_figure_dset(f, "sunResponse")
+            self.create_figure_dset(f, "saturation")
             self.create_figure_dset(f, "darkError")
             self.create_figure_dset(f, "darkResidual")
             self.create_figure_dset(f, "noise")
             self.create_figure_dset(f, "combined")
             self.create_mask_dset(f, "invalid")
+            self.create_mask_dset(f, "combinedFlag")
             f.close()
             print('created db')
         
@@ -643,6 +668,10 @@ class PixelQuality:
                 dset[idx,:] = self.noise_figure
                 dset = f['invalid']
                 dset[idx,:] = self.invalid_mask
+                dset = f['combinedFlag']
+                dset[idx,:] = self.combined_flags
+                dset = f['saturation']
+                dset[idx,:] = self.darkcursat_figure
             else:
                 # append: resize and write.. orbits dataset first
                 self.n_write = dset.size + 1
@@ -674,7 +703,13 @@ class PixelQuality:
                 dset = f['invalid']
                 dset.resize((self.n_write, self.num_chanpixels))
                 dset[self.n_write-1,:] = self.invalid_mask
-            
+                dset = f['combinedFlag']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.combined_flags
+                dset = f['saturation']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.darkcursat_figure
+
             f.close()
         else:
             logging.exception("failed to open database %s" % db_fname)
@@ -880,7 +915,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality()
-    orbit = 42000
+    orbit = 42001
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)
