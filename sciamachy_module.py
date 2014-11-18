@@ -511,6 +511,57 @@ def get_closest_state_exec(orbit, stateid, calib_db, **kwargs):
     fid.close()
     return read_extracted_states_([orbit_,orbit_], stateid, calib_db, **kwargs)
 
+class NoiseModel:
+    """
+    Class that computed detector pixel noise for specified settings.
+    This is a class because various arrays need to be initialized before-hand.
+    """
+
+    def __init__(self):
+        self.Echarge     = 1.6021892e-19
+        self.Boltzman    = 1.38065800E-23
+        self.ElBu        = np.array([490.   ,855.   ,854.   ,868.   ,863.   ,529. ,177. ,177. ])               # electrons per BU
+        self.Temperature = np.array([200    ,200    ,220    ,220    ,220    ,200  ,150  ,150  ])               # nominal [Kelvin]
+        self.Gain        = np.array([40     ,20     ,20     ,20     ,20     ,0    ,0    ,0    ])               # pre amplifier gain
+        self.Capacitor   = np.array([4E-12  ,4E-12  ,4E-12  ,4E-12  ,4E-12  ,0    ,0    ,0    ])               # only for ch1-5, [Fahrad]
+        self.AdcNoise    = np.zeros(8) + np.sqrt(1./12.)                                                       # bu
+        self.AdcThermal  = np.array([0.5    ,0.5    ,0.5    ,0.5    ,0.5    ,0.5  ,0.5  ,0.5  ])               # bu
+        self.Opamp       = np.array([500.   ,500.   ,500.    ,500.   ,500.   ,1100., 600. ,600. ]) / self.ElBu # opamp / mux [bu]
+        fid = h5py.File("resistance.h5")
+        self.resistance = fid["resistance"][:]
+        return
+
+    def compute(self, pixel, pet, adc, coaddf=1, give_shotnoise=False):
+        """
+        Returns noise for specified detector pixel with exposure time pet, and detector filling (excluding analog offset) adc.
+        This is computed using on-ground measured resistances.
+
+        Parameters
+        ----------
+
+        pixel: int
+            pixel number [0..8191]
+        pet: float
+            pixel exposure time
+        adc: float
+            detectore filling, excluding analog offset
+        coaddf: int, optional
+            co-adding factor, default = 1
+        give_shotnoise: bool, optional
+            if set, also return shotnoise estimate
+        """
+
+        channel     = pixel // 1024
+        r_junction  = abs(self.resistance[pixel])
+        jnoise      = np.sqrt(self.Temperature[channel]*2*self.Boltzman*pet*coaddf/r_junction)/self.Echarge/self.ElBu[channel]           # bu
+        ktc         = np.sqrt(self.Boltzman*self.Temperature[channel]*self.Capacitor[channel])/self.Echarge/self.ElBu[channel]                                  # bu
+        shotnoise   = np.sqrt(adc/self.ElBu[channel])                                                                                  # bu
+        grand_total = np.sqrt(jnoise**2+ktc**2+shotnoise**2+self.AdcNoise[channel]**2+self.AdcThermal[channel]**2+self.Opamp[channel]**2)
+        if give_shotnoise:
+            return grand_total, shotnoise
+        else:
+            return grand_total
+
 #-- main -----------------------------------------------------------------------
 
 # test function. not a unit test.. yet
@@ -547,3 +598,11 @@ if __name__ == '__main__':
     print(b[5*1024:6*1024])
     print(b[6*1024:7*1024])
     print(b[7*1024:8*1024])
+
+    nm = NoiseModel()
+    noise, shot = nm.compute(7*1024+310, 1.0, 5000., give_shotnoise=True)
+    pixarr = np.array([7*1024+310,7*1024+311,7*1024+312])
+    petarr = np.array([1.0,1.0,1.0])
+    adc = np.array([5000.,4500.,4000.])
+    noise, shot = nm.compute(pixarr, petarr, adc, give_shotnoise=True)
+    print("noise", noise, "shot", shot)

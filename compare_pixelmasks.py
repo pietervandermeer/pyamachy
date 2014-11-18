@@ -3,7 +3,7 @@ from __future__ import print_function, division
 import numpy as np
 import h5py
 
-from sciamachy_module import get_closest_state_exec
+from sciamachy_module import get_closest_state_exec, NoiseModel, petcorr, get_darkstateid
 
 class Mask:
 
@@ -39,8 +39,11 @@ class Mask:
         self.mask = mask[7*1024:8*1024]
         return
 
-    # ASCII version of pixelquality 
     def load_ascii_quality(self, fname):
+        """
+        load ASCII version of pixelquality 
+        """
+
         with open(fname) as f:
             content = f.readlines()
 
@@ -56,6 +59,56 @@ class Mask:
 
         self.mask = mask
 
+        return
+
+    def load_sdmf30_crit(self, orbit, crit_name):
+        """
+        load sdmf 3.0 pixelmask's noise criterion  
+        """
+        fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+        fid = h5py.File(fname, "r")
+        grpname = "orbitalMask/"
+        ds_orbits = fid[grpname+"orbitList"]
+
+        orbits = ds_orbits[:]
+        #print(orbits)
+
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+
+        i = np.argmax(idx)
+        print("i=",i)
+
+        dset = fid[grpname+crit_name]
+        self.mask = dset[7*1024:,i]
+        return
+
+    def load_sdmf32_figure(self, orbit, fig_name):
+        """
+        load sdmf 3.2 pixelmask's noise criterion  
+        """
+        fname = "sdmf_pyxelmask.h5"
+        fid = h5py.File(fname, "r")
+        grpname = "" #orbitalMask/" # maybe in the future
+        ds_orbits = fid[grpname+"orbits"]
+
+        orbits = ds_orbits[:]
+        #print(orbits)
+
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+
+        i = np.argmax(idx)
+        print("i=",i)
+
+        dset = fid[grpname+fig_name]
+        fig = dset[i,:]
+        # all nan's should get mask = 0 (not flagged), for good comparison with 3.0.. 
+        idx = np.isfinite(fig)
+        self.mask = np.zeros(1024, dtype=np.bool)
+        self.mask[idx] = fig[idx] < 0.1 # quite arbitrary threshold.. 
         return
 
     def diff(self, new):
@@ -74,7 +127,7 @@ class Mask:
             window = (channel_indices >= self.win_start) & (channel_indices <= self.win_end)
             return channel_indices[window]
         else:
-            return []
+            return np.array([])
 
     def get_new_alive(self, new):
         tmp = self.mask.astype('i') - new.mask
@@ -83,7 +136,7 @@ class Mask:
             window = (channel_indices >= self.win_start) & (channel_indices <= self.win_end)
             return channel_indices[window]
         else:
-            return []
+            return np.array([])
 
     def apply_pixel_window(self, win_start, win_end):
         self.win_start = win_start
@@ -92,6 +145,66 @@ class Mask:
     def reset_pixel_window(self):
         self.win_start = 0
         self.win_end = 1024
+
+def compare_noise_30_vs_32(orbit):
+    m30 = Mask()
+    m30_combined = Mask()
+    m30_combined.load_ascii(orbit)
+    m30.load_sdmf30_crit(orbit, "noise")
+
+    m32 = Mask()
+    m32.load_sdmf32_figure(orbit, "noise")
+
+    newdead = m30.get_new_dead(m32)
+    newalive = m30.get_new_alive(m32)
+    print("new noisy:", newdead.size, newdead)
+    print("new noisy but already bad", np.sum(np.in1d(newdead, np.where(m30_combined.mask))))
+    print("real new noisy", newdead[np.in1d(newdead, np.where(m30_combined.mask), invert=True)])
+
+    print("new not-noisy:", newalive.size, newalive)
+    print("new not-noisy but still bad", np.sum(np.in1d(newalive, np.where(m30_combined.mask))))
+    print("real new not-noisy:", newalive[np.in1d(newalive, np.where(m30_combined.mask), invert=True)])
+    return
+
+def compare_res_30_vs_32(orbit):
+    m30 = Mask()
+    m30_combined = Mask()
+    m30_combined.load_ascii(orbit)
+    m30.load_sdmf30_crit(orbit, "residual")
+
+    m32 = Mask()
+    m32.load_sdmf32_figure(orbit, "darkResidual")
+
+    newdead = m30.get_new_dead(m32)
+    newalive = m30.get_new_alive(m32)
+    print("new resy:", newdead.size, newdead)
+    print("new resy but already bad", np.sum(np.in1d(newdead, np.where(m30_combined.mask))))
+    print("real new resy", newdead[np.in1d(newdead, np.where(m30_combined.mask), invert=True)])
+
+    print("new not-resy:", newalive.size, newalive)
+    print("new not-resy but still bad", np.sum(np.in1d(newalive, np.where(m30_combined.mask))))
+    print("real new not-resy:", newalive[np.in1d(newalive, np.where(m30_combined.mask), invert=True)])
+    return
+
+def compare_error_30_vs_32(orbit):
+    m30 = Mask()
+    m30_combined = Mask()
+    m30_combined.load_ascii(orbit)
+    m30.load_sdmf30_crit(orbit, "residual")
+
+    m32 = Mask()
+    m32.load_sdmf32_figure(orbit, "darkError")
+
+    newdead = m30.get_new_dead(m32)
+    newalive = m30.get_new_alive(m32)
+    print("new errory:", newdead.size, newdead)
+    print("new errory but already bad", np.sum(np.in1d(newdead, np.where(m30_combined.mask))))
+    print("real new errory", newdead[np.in1d(newdead, np.where(m30_combined.mask), invert=True)])
+
+    print("new not-errory:", newalive.size, newalive)
+    print("new not-errory but still bad", np.sum(np.in1d(newalive, np.where(m30_combined.mask))))
+    print("real new not-errory:", newalive[np.in1d(newalive, np.where(m30_combined.mask), invert=True)])
+    return
 
 def print_dead_quality():
     orbit = 50000
@@ -309,48 +422,41 @@ def print_dark(orbit, pixnr):
 
     return
 
+def print_noise30(orbit, pixnr):
+    pets = 0.125, 0.5, 1.0
+    for pet in pets:
+        stateid = get_darkstateid(pet, orbit)
+        fname = "/SCIA/SDMF30/sdmf_extract_calib.h5"
+        fid = h5py.File(fname, "r")
+
+        grpname = "State_"+str('%02d'%stateid)+"/"
+        ds_orbits = fid[grpname+"orbitList"]
+        orbits = ds_orbits[:]
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+        i = np.argmax(idx)
+        print("i=",i)
+        ds_noise = fid[grpname+"readoutNoise"]
+        print("SDMF3.0 noise("+str(pet)+")=", ds_noise[pixnr,i])
+
+    return
+
 def print_noise(orbit, pixnr):
     fname = "/SCIA/SDMF31/pieter/noise.h5"
     fid = h5py.File(fname, "r")
+    pets = 0.125, 0.5, 1.0
 
-    ds_orbits = fid["pet1.0/orbits"]
-    orbits = ds_orbits[:]
-    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
-    orbits = np.unique(orbits)
-    #print(orbits)
-    idx = orbit == orbits
-    if np.sum(idx) == 0:
-        raise Exception("orbit not in orbital mask")
-    i = np.argmax(idx)
-    print("i=",i)
-    ds_noise = fid["pet1.0/noise"]
-    print("noise(1.0)=", ds_noise[i, pixnr-7*1024])
-
-    ds_orbits = fid["pet0.5/orbits"]
-    orbits = ds_orbits[:]
-    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
-    orbits = np.unique(orbits)
-    #print(orbits)
-    idx = orbit == orbits
-    if np.sum(idx) == 0:
-        raise Exception("orbit not in orbital mask")
-    i = np.argmax(idx)
-    print("i=",i)
-    ds_noise = fid["pet0.5/noise"]
-    print("noise(0.5)=", ds_noise[i, pixnr-7*1024])
-
-    ds_orbits = fid["pet0.125/orbits"]
-    orbits = ds_orbits[:]
-    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
-    orbits = np.unique(orbits)
-    #print(orbits)
-    idx = orbit == orbits
-    if np.sum(idx) == 0:
-        raise Exception("orbit not in orbital mask")
-    i = np.argmax(idx)
-    print("i=",i)
-    ds_noise = fid["pet0.125/noise"]
-    print("noise(0.125)=", ds_noise[i, pixnr-7*1024])
+    for pet in pets:
+        ds_orbits = fid["pet"+str(pet)+"/orbits"]
+        orbits = ds_orbits[:]
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+        i = np.argmax(idx)
+        print("i=",i)
+        ds_noise = fid["pet"+str(pet)+"/noise"]
+        print("SDMF3.2 noise("+str(pet)+")=", ds_noise[i, pixnr-7*1024])
 
     return
 
@@ -360,8 +466,6 @@ def print_vardark(orbit, pixnr):
 
     ds_orbits = fid["dim_orbit"]
     orbits = ds_orbits[:]
-    # urgh.. needs to be modified this noise product.. orbits should contain unique orbit numbers
-    orbits = np.unique(orbits)
     #print(orbits)
     idx = orbit == orbits
     if np.sum(idx) == 0:
@@ -378,37 +482,24 @@ def print_vardark(orbit, pixnr):
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
     #print_new_dead_new_alive()
     #print_dead_quality()
-    orbit = 42001
-    pixnr = 592+7*1024
+    orbit = 42002
+    pixnr = 840+7*1024
     print_nr_ppg(orbit)
     print_criteria30(orbit, pixnr)
     print_dark(orbit, pixnr)
     print_noise(orbit, pixnr)
     print_vardark(orbit, pixnr)
     print_criteria32(orbit, pixnr)
+    compare_noise_30_vs_32(orbit)
+    compare_res_30_vs_32(orbit)
+    compare_error_30_vs_32(orbit)
+    print_noise30(orbit, pixnr)
 
-    # m2 = Mask()
-    # m2.load_ascii(49245)
-    # m3 = Mask()
-    # m3.load_ascii(49259)
-
-    # d1 = m1.diff(m2).astype('i')
-    # d2 = m2.diff(m3).astype('i')
-    # print(m1.mask)
-    # print(m2.mask)
-    # print(np.where(d1)[0])
-    # print(np.where(d2)[0])
-
-    # x = range(1024)
-    # plt.cla()
-    # plt.ticklabel_format(useOffset=False)
-    # plt.ylim([-.1,1.1])
-    # plt.plot(x, d1, ls='none', marker='o', label='diff1')
-    # plt.plot(x, d2, ls='none', marker='o', label='diff2')
-    # plt.legend(loc='best')
-    # plt.show()
+    nm = NoiseModel()
+    print(nm.compute(pixnr, 1.0-petcorr, 6000.))
+    print(nm.compute(pixnr, 0.5-petcorr, 6000.))
+    print(nm.compute(pixnr, 0.125-petcorr, 6000.))

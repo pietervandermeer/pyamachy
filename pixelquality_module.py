@@ -16,7 +16,7 @@ warnings.simplefilter("error") # warnings to errors
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark_module import load_varkdark_orbit, read_ch8_darks
-from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr
+from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr, NoiseModel
 
 #-- functions ------------------------------------------------------------------
 
@@ -73,7 +73,7 @@ def plot_quality_number(spec, thresh):
 
 class PixelQuality:
 
-    def __init__(self):
+    def __init__(self, sdmf30_compat=False):
         
         #
         # define some useful variables
@@ -82,9 +82,10 @@ class PixelQuality:
         self.numchannels = 8
         self.num_chanpixels = 1024
         # boundary between 6 and 6+
-        self.boundary    = self.num_chanpixels*5+795
-        self.num_pixels  = self.numchannels*self.num_chanpixels
-        self.maxorbits   = 100000
+        self.boundary = self.num_chanpixels*5+795
+        self.num_pixels = self.numchannels*self.num_chanpixels
+        self.maxorbits = 100000
+        self.sdmf30_compat = sdmf30_compat
 
         #
         # Parse config file, exit if unsuccessful
@@ -145,16 +146,17 @@ class PixelQuality:
                 channelindex = range1k + (i-1)*self.num_chanpixels
 
         #
-        # prepare non-linearity correction
+        # prepare objects relating to low-level detector calibration and statistics
         #
 
         self.nlc = NonlinCorrector()
+        self.noisemodel = NoiseModel()
 
         #
         # open noise database
         #
 
-        self.noise_fid = h5py.File("noise.h5", "r")
+        self.noise_fid = h5py.File("/SCIA/SDMF31/pieter/noise.h5", "r")
         self.ds_noise10 = self.noise_fid["pet1.0/noise"]
         self.ds_orbits10 = self.noise_fid["pet1.0/orbits"]
         self.ds_noise05 = self.noise_fid["pet0.5/noise"]
@@ -414,18 +416,25 @@ class PixelQuality:
         # let's just take a single exposure time to begin with
 
         self.noise_figure = self.get_noise10(orbit)
-        #else:
-        #    self.noise_figure = np.ones(self.num_chanpixels) * np.nan
+        if self.sdmf30_compat:
+            self.noise_figure /= 1.5
+
+        # compute maximum allowable noise based on physical model of on-ground pixels * scalar
+        # TODO: replace cfg variable max_noise with noise_scalar
+        pixarr = np.arange(7*1024,8*1024, dtype=np.int)
+        petarr = np.zeros(1024) + 1.0 - petcorr
+        adc = np.abs(np.nan_to_num(darkcurrent_)) * (1.0-petcorr)
+        max_noise = 3.0 * self.noisemodel.compute(pixarr, petarr, adc)
 
         self.noise_figure = np.nan_to_num(self.noise_figure.flatten())
         idx = self.noise_figure > max_noise
-        self.noise_figure[idx] = max_noise
+        self.noise_figure[idx] = max_noise[idx]
         # replace bogus 0 value with nan
-        idx = self.noise_figure == 0
+        idx = np.abs(self.noise_figure) < 0.0001
         self.noise_figure[idx] = np.nan
         self.noise_figure = (max_noise - self.noise_figure) / max_noise
         for pixnr in range(1024):
-            print(pixnr, self.noise_figure[pixnr])
+            print(pixnr, self.noise_figure[pixnr], "<", max_noise[pixnr])
 
         #
         # check whether the darkcurrent residuals exceed their error
@@ -914,8 +923,8 @@ class PixelQuality:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
-    p = PixelQuality()
-    orbit = 42001
+    p = PixelQuality(sdmf30_compat=True)
+    orbit = 42002
     print("initialised.")
     p.calculate(orbit)
     print("orbit %d computed" % orbit)
