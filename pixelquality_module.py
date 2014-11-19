@@ -10,7 +10,7 @@ import h5py
 import logging
 import datetime
 import warnings
-import scipy.signal #.medfilt
+import scipy.signal
 warnings.simplefilter("error") # warnings to errors
 
 from read_statedark_module import sdmf_read_statedark
@@ -44,8 +44,9 @@ def calculate_light_figure(spec, verbose=False, give_smooth=False):
         median-smoothed version of `spec'
 
     """
-    smooth = scipy.signal.medfilt(spec)
-    raw_figure = np.abs(spec / smooth)
+    smooth = scipy.signal.medfilt(spec) # smooth with median filter
+    smooth[smooth==0] = np.nan # avoid division by 0
+    raw_figure = np.abs(spec / smooth) # compute ratio between smooth and raw spectrum
     idx = (np.isfinite(raw_figure)) & (np.abs(raw_figure) != 0)
     reldev = np.empty(spec.shape) + np.nan
     reldev[idx] = np.exp(-np.abs(np.log(raw_figure[idx])))
@@ -285,9 +286,29 @@ class PixelQuality:
             idx_ = np.where(nonan_idx)[0][idx]  # remap index, numpy doesn't do assignments on double sliced stuff
             #print("idx_=",idx_)
             figure[idx_] = 1
+
+        idx = figure[nonan_idx] < 0
+        if (np.sum(idx) > 0):
+            #print("idx=",idx)
+            idx_ = np.where(nonan_idx)[0][idx]  # remap index, numpy doesn't do assignments on double sliced stuff
+            #print("idx_=",idx_)
+            figure[idx_] = 0
         return figure
 
-    def calculate(self, orbit):
+    def load_sdmf30_chi(self, orbit):
+        fname = "/SCIA/SDMF30/sdmf_dark.h5"
+        fid30 = h5py.File(fname, "r")
+        grpname = ""
+        ds_orbits = fid30[grpname+"orbitList"]
+        orbits = ds_orbits[:]
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+        i30 = np.argmax(idx)
+        dset_chi = fid30["chiSquareFit"]
+        return dset_chi[7*1024:8*1024,i30]
+
+    def calculate(self, orbit, debug=False):
         """ 
         perform the quality computation for specified orbit
 
@@ -353,14 +374,7 @@ class PixelQuality:
             pet_string = str(pet)
             readoutmean[pet_string] = readouts
             readoutnoise[pet_string] = noise #self.get_noise(orbit, pet)
-            print(readoutmean[pet_string].shape)
-
-# TODO: exception handling? 
-#                logging.warning("no dark data for orbit %d!" % orbit)
-#                self.invalid_mask = np.ones(self.num_chanpixels, dtype=np.bool)
-#                self.combined = np.empty((self.num_chanpixels,), dtype=np.float32)
-#                self.combined[:] = np.nan
-#                return
+            #print(readoutmean[pet_string].shape)
 
         #
         # check invalid data points in the dark current calculation
@@ -416,8 +430,6 @@ class PixelQuality:
         # let's just take a single exposure time to begin with
 
         self.noise_figure = self.get_noise10(orbit)
-        if self.sdmf30_compat:
-            self.noise_figure /= 1.5
 
         # compute maximum allowable noise based on physical model of on-ground pixels * scalar
         # TODO: replace cfg variable max_noise with noise_scalar
@@ -426,6 +438,10 @@ class PixelQuality:
         adc = np.abs(np.nan_to_num(darkcurrent_)) * (1.0-petcorr)
         max_noise = 3.0 * self.noisemodel.compute(pixarr, petarr, adc)
 
+        # scale factor for to approximate effect of sigma clipping in sdmf3.0
+        if self.sdmf30_compat:
+            max_noise *= 1.6
+
         self.noise_figure = np.nan_to_num(self.noise_figure.flatten())
         idx = self.noise_figure > max_noise
         self.noise_figure[idx] = max_noise[idx]
@@ -433,8 +449,9 @@ class PixelQuality:
         idx = np.abs(self.noise_figure) < 0.0001
         self.noise_figure[idx] = np.nan
         self.noise_figure = (max_noise - self.noise_figure) / max_noise
-        for pixnr in range(1024):
-            print(pixnr, self.noise_figure[pixnr], "<", max_noise[pixnr])
+        if debug:
+            for pixnr in range(1024):
+                print(pixnr, self.noise_figure[pixnr], "<", max_noise[pixnr])
 
         #
         # check whether the darkcurrent residuals exceed their error
@@ -467,14 +484,12 @@ class PixelQuality:
                 noiserow = corrnoise[i_row,:]
                 #phase = correcteddata[index[j]].phase
                 #if phase > 0.0 and phase < 0.3:
-                #print(noiserow.shape)
                 noiserow = np.nan_to_num(noiserow)
                 goodnoise = noiserow > 0
                 # if there are invalid noise figures, generate an error!
                 if np.sum(goodnoise) == 0:
                     logging.warning('invalid noise(=0) in residual criterion!')
                     invalid_mask[:] = True
-                #print(goodnoise.shape, meanrow)
                 tmp[goodnoise] += abs(meanrow[goodnoise] / noiserow[goodnoise])
                 tmp_count += goodnoise
                 i_row += 1
@@ -487,9 +502,9 @@ class PixelQuality:
         #
 
         self.dc_err_figure = np.abs(darkcurrent / uncertainty)
-        print(self.dc_err_figure.shape)
+        #print(self.dc_err_figure.shape)
         self.dc_err_figure = self.dc_err_figure.flatten() / 5000 # empirical scalar to get range normalized to [0..1], TODO: config file
-        print(self.dc_err_figure.shape)
+        #print(self.dc_err_figure.shape)
         self.dc_err_figure = self.clip_figure(self.dc_err_figure)
 
         #
@@ -508,10 +523,11 @@ class PixelQuality:
         #
 
         dictwls = get_closest_state_exec(orbit, 61, calib_db, readoutMean=True)
-        print("wls pets = ", dictwls['pet'])
+        if debug:
+            print("wls pets = ", dictwls['pet'])
         wls_readout = self.nlc.correct_ch8(dictwls['readoutMean']).flatten()
         wls_readout -= darkcurrent31 * dictwls['pet'] + analogoffset31
-        self.wls_reldev, smooth_wls = calculate_light_figure(wls_readout, verbose=True, give_smooth=True)
+        self.wls_reldev, smooth_wls = calculate_light_figure(wls_readout, verbose=debug, give_smooth=True)
         #plot_quality_number(self.wls_reldev, self.cfg["thresh_wls"])
 
         #
@@ -519,43 +535,57 @@ class PixelQuality:
         #
 
         dictsun = get_closest_state_exec(orbit, 62, calib_db, readoutMean=True)
-        print("sun pets = ", dictsun['pet'])
+        if debug:
+            print("sun pets = ", dictsun['pet'])
         sun_readout = self.nlc.correct_ch8(dictsun['readoutMean']).flatten()
         sun_readout -= darkcurrent31 * dictsun['pet'] + analogoffset31
-        self.sun_reldev, smooth_sun = calculate_light_figure(sun_readout, verbose=True, give_smooth=True)
+        self.sun_reldev, smooth_sun = calculate_light_figure(sun_readout, verbose=debug, give_smooth=True)
         # relative threshold
         #plot_quality_number(self.sun_reldev, self.cfg["thresh_sun"])
+
+        #
+        # compute sdmf3.0 chisquare (sdmf3.2 vardark is more robust and hence generates different residuals)
+        #
+
+        chisquare = self.load_sdmf30_chi(orbit)
+        self.chisquare30_figure = (50 - chisquare) / 50 # taken from SDMF3.0 configuration
+        self.chisquare30_figure = self.clip_figure(self.chisquare30_figure)
 
         #
         # combine the criteria using a weighted sum 
         #
 
-        print(self.dc_err_figure.shape)
-        print(self.residual_figure.shape)
-        print(self.noise_figure.shape)
-        # completely omitting these since they are completely covered by noise and dc sat
-        self.combined = w_err*self.dc_err_figure + w_res*self.residual_figure 
-        self.combined *= self.noise_figure 
-        self.combined = self.combined.flatten()
-        #print(self.combined, self.combined.shape, self.combined.dtype)
+        if self.sdmf30_compat:
+            self.combined = self.noise_figure * self.noise_figure
+            self.combined = self.combined.flatten()
+        else:
+            self.combined = np.ones(1024, dtype=np.float)
         self.combined *= np.logical_not(self.invalid_mask)
         self.combined *= self.sun_reldev
         self.combined *= self.wls_reldev
+        # if SDMF3.0 compatibility mode is enabled:
+        if self.sdmf30_compat:
+            # chisquare from SDMF 3.0 dark fit
+            self.combined *= self.chisquare30_figure
+        else:
+            # error and residual from SDMF3.2 dark fit
+            self.combined *= w_err*self.dc_err_figure + w_res*self.residual_figure 
 
         #
         # NaN is bogus => quality = 0, clip to range [0..1], and reverse (in preparation for pixelmask (1:bad, 0:good))
         #
 
-        self.combined_flags = np.logical_xor(True, (np.nan_to_num(self.combined) > 0.1))
-        for pixnr in range(1024):
-            print(pixnr, self.combined_flags[pixnr], 
-                         self.combined[pixnr], 
-                         self.invalid_mask[pixnr], 
-                         self.noise_figure[pixnr], 
-                         self.residual_figure[pixnr], 
-                         self.dc_err_figure[pixnr],
-                         self.wls_reldev[pixnr], 
-                         self.sun_reldev[pixnr])
+        self.combined_flags = np.nan_to_num(self.combined) < 0.005
+        if debug:
+            for pixnr in range(1024):
+                print(pixnr, self.combined_flags[pixnr], 
+                             self.combined[pixnr], 
+                             self.invalid_mask[pixnr], 
+                             self.noise_figure[pixnr], 
+                             self.residual_figure[pixnr], 
+                             self.dc_err_figure[pixnr],
+                             self.wls_reldev[pixnr], 
+                             self.sun_reldev[pixnr])
 
         return
 
@@ -642,6 +672,7 @@ class PixelQuality:
             self.create_figure_dset(f, "darkResidual")
             self.create_figure_dset(f, "noise")
             self.create_figure_dset(f, "combined")
+            self.create_figure_dset(f, "chisquare3.0")
             self.create_mask_dset(f, "invalid")
             self.create_mask_dset(f, "combinedFlag")
             f.close()
@@ -681,6 +712,9 @@ class PixelQuality:
                 dset[idx,:] = self.combined_flags
                 dset = f['saturation']
                 dset[idx,:] = self.darkcursat_figure
+                dset = f['chisquare3.0']
+                dset[idx,:] = self.chisquare30_figure
+
             else:
                 # append: resize and write.. orbits dataset first
                 self.n_write = dset.size + 1
@@ -718,6 +752,9 @@ class PixelQuality:
                 dset = f['saturation']
                 dset.resize((self.n_write, self.num_chanpixels))
                 dset[self.n_write-1,:] = self.darkcursat_figure
+                dset = f['chisquare3.0']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[self.n_write-1,:] = self.chisquare30_figure
 
             f.close()
         else:
@@ -924,12 +961,19 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
     p = PixelQuality(sdmf30_compat=True)
-    orbit = 42002
     print("initialised.")
-    p.calculate(orbit)
-    print("orbit %d computed" % orbit)
-    p.write(directory=".")
-    print("Pixel mask data for orbit %d written to db." % orbit)
 
-    a = p.clip_figure(np.array([np.nan, 0, 0.5, 1.0, 1.5]))
-    print(a)
+    for orbit in range(42000,43400):
+#    for orbit in range(42999,43001):
+        try:
+            p.calculate(orbit)
+        except:
+           logging.warning("calculation failed for orbit %d!" % orbit)
+           continue
+
+        print("orbit %d computed" % orbit)
+        p.write(directory=".")
+        print("Pixel mask data for orbit %d written to db." % orbit)
+
+    #a = p.clip_figure(np.array([np.nan, 0, 0.5, 1.0, 1.5]))
+    #print(a)

@@ -12,6 +12,7 @@ class Mask:
         return
 
     def load_ascii(self, orbit):
+        # smooth mask
         fname = "/SCIA/SDMF30/Smoothmask/ASCII/"+str(orbit)+".mask"
         with open(fname) as f:
             content = f.readlines()
@@ -37,6 +38,7 @@ class Mask:
         #
 
         self.mask = mask[7*1024:8*1024]
+
         return
 
     def load_ascii_quality(self, fname):
@@ -81,12 +83,12 @@ class Mask:
         print("i=",i)
 
         dset = fid[grpname+crit_name]
-        self.mask = dset[7*1024:,i]
+        self.mask = np.array(dset[7*1024:,i], dtype=np.bool)
         return
 
     def load_sdmf32_figure(self, orbit, fig_name):
         """
-        load sdmf 3.2 pixelmask's noise criterion  
+        load sdmf 3.2 pixelmask's figure (floats) and thresholds them to bools 
         """
         fname = "sdmf_pyxelmask.h5"
         fid = h5py.File(fname, "r")
@@ -109,6 +111,29 @@ class Mask:
         idx = np.isfinite(fig)
         self.mask = np.zeros(1024, dtype=np.bool)
         self.mask[idx] = fig[idx] < 0.1 # quite arbitrary threshold.. 
+        return
+
+    def load_sdmf32_mask(self, orbit, crit_name):
+        """
+        load sdmf 3.2 pixelmask's mask (bools)
+        """
+        fname = "sdmf_pyxelmask.h5"
+        fid = h5py.File(fname, "r")
+        grpname = "" #orbitalMask/" # maybe in the future
+        ds_orbits = fid[grpname+"orbits"]
+
+        orbits = ds_orbits[:]
+        #print(orbits)
+
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+
+        i = np.argmax(idx)
+        print("i=",i)
+
+        dset = fid[grpname+crit_name]
+        self.mask = dset[i,:]
         return
 
     def diff(self, new):
@@ -145,6 +170,22 @@ class Mask:
     def reset_pixel_window(self):
         self.win_start = 0
         self.win_end = 1024
+
+def compare_combined_30_vs_32(orbit):
+    m30 = Mask()
+    m30.load_sdmf30_crit(orbit, "combined")
+
+    m32 = Mask()
+    m32.load_sdmf32_mask(orbit, "combinedFlag")
+
+    # for i in range(1024):
+    #     print(i, m30.mask[i], m32.mask[i])
+
+    newdead = m30.get_new_dead(m32)
+    newalive = m30.get_new_alive(m32)
+    print("3.0->3.2 dead:", newdead.size, newdead)
+    print("3.0->3.2 alive:", newalive.size, newalive)
+    return
 
 def compare_noise_30_vs_32(orbit):
     m30 = Mask()
@@ -258,7 +299,7 @@ def print_new_dead_new_alive():
 
 def print_criteria32(orbit, pixnr):
     """ 
-    Print flagging criteria for SDMF3.0.
+    Print flagging criteria for SDMF3.2.
     """
     pixnr -= 7*1024
     fname = "sdmf_pyxelmask.h5"
@@ -479,6 +520,64 @@ def print_vardark(orbit, pixnr):
 
     return
 
+def print_30_vs_32_fit_quality(orbit):
+    """ 
+    Print flagging criteria for SDMF3.0 vs SDMF3.2 for each pixel.
+    """
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = "orbitalMask/"
+    ds_orbits = fid30[grpname+"orbitList"]
+    orbits = ds_orbits[:]
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i30 = np.argmax(idx)
+
+    ds_combined30 = fid30[grpname+"combined"]
+    ds_chi30 = fid30[grpname+"chiSquare"]
+    ds_noise30 = fid30[grpname+"noise"]
+    ds_inv30 = fid30[grpname+"invalid"]
+    ds_res30 = fid30[grpname+"residual"]
+
+    fname = "sdmf_pyxelmask.h5"
+    fid32 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid32[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    idx = orbit == orbits
+    if np.sum(idx) == 0:
+        raise Exception("orbit not in orbital mask")
+    i32 = np.argmax(idx)
+
+    ds_combined32 = fid32[grpname+"combinedFlag"]
+    ds_res32 = fid32[grpname+"darkResidual"]
+    ds_error32 = fid32[grpname+"darkError"]
+    ds_noise32 = fid32[grpname+"noise"]
+
+    print("pix\tcom\t\tchi\t\tnoi\t\tinv\t\tres\t\tc32\t\tr32\t\te32\t\tn32")
+    for pixnr in range(1024):
+        print(pixnr, "\t\t", 
+              ds_combined30[pixnr+7*1024,i30], "\t\t", 
+              ds_chi30[pixnr+7*1024,i30], "\t\t", 
+              ds_noise30[pixnr+7*1024,i30], "\t\t", 
+              ds_inv30[pixnr+7*1024,i30], "\t\t", 
+              ds_res30[pixnr+7*1024,i30], "\t\t",
+              ds_combined32[i32,pixnr], "\t\t", 
+              ds_res32[i32,pixnr], "\t\t", 
+              ds_error32[i32,pixnr], "\t\t", 
+              ds_noise32[i32,pixnr])
+
+    return
+
+def print_noisemodel(pixnr):
+    nm = NoiseModel()
+    print("noise model @ 1.0s:", nm.compute(pixnr, 1.0-petcorr, 6000.))
+    print("noise model @ 0.5s:", nm.compute(pixnr, 0.5-petcorr, 6000.))
+    print("noise model @ 0.125s:", nm.compute(pixnr, 0.125-petcorr, 6000.))
+    return
+
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -486,20 +585,20 @@ if __name__ == "__main__":
 
     #print_new_dead_new_alive()
     #print_dead_quality()
-    orbit = 42002
-    pixnr = 840+7*1024
-    print_nr_ppg(orbit)
-    print_criteria30(orbit, pixnr)
-    print_dark(orbit, pixnr)
-    print_noise(orbit, pixnr)
+    orbit = 43000
+    pixnr = 450+7*1024
+
+    # print_nr_ppg(orbit)
+    #print_criteria30(orbit, pixnr)
+    #print_dark(orbit, pixnr)
+    #print_noise(orbit, pixnr)
     print_vardark(orbit, pixnr)
     print_criteria32(orbit, pixnr)
-    compare_noise_30_vs_32(orbit)
-    compare_res_30_vs_32(orbit)
-    compare_error_30_vs_32(orbit)
+    # compare_noise_30_vs_32(orbit)
+    # compare_res_30_vs_32(orbit)
+    # compare_error_30_vs_32(orbit)
     print_noise30(orbit, pixnr)
+    compare_combined_30_vs_32(orbit)
+    #print_30_vs_32_fit_quality(orbit)
 
-    nm = NoiseModel()
-    print(nm.compute(pixnr, 1.0-petcorr, 6000.))
-    print(nm.compute(pixnr, 0.5-petcorr, 6000.))
-    print(nm.compute(pixnr, 0.125-petcorr, 6000.))
+    print_noisemodel(pixnr)

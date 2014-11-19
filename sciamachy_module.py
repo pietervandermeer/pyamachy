@@ -507,7 +507,6 @@ def get_closest_state_exec(orbit, stateid, calib_db, **kwargs):
     orbitlist = (gid['orbitList'])[:]
     idx = np.argmin(np.abs(orbitlist[:] - orbit))
     orbit_ = orbitlist[idx]
-    print("FOUND:", orbit_)
     fid.close()
     return read_extracted_states_([orbit_,orbit_], stateid, calib_db, **kwargs)
 
