@@ -26,6 +26,7 @@ def scia_dark_fun1(p, x):
     dark += trend * orbit_phase
     return dark*pet + ao
 
+# no coadding
 def scia_dark_fun2(p, x):
     ao = p[0]
     dc = p[1]
@@ -46,7 +47,7 @@ def scia_dark_fun2(p, x):
     dark += trend * orbit_phase
     return dark*pet + ao
 
-# normalized (no ao, trend or pet)
+# normalized (no ao, trend or pet).. only the wave itself
 def scia_dark_fun2n(p, x):
     ao = p[0]
     dc = p[1]
@@ -67,7 +68,7 @@ def scia_dark_fun2n(p, x):
     #dark += trend * orbit_phase
     return dark
 
-# normalized (no ao, trend or pet)
+# normalized (no ao, trend or pet).. but with dc
 def scia_dark_fun2m(p, x):
     ao = p[0]
     dc = p[1]

@@ -181,6 +181,16 @@ class VarDarkdb:
             self.ds_uncertainties[self.n_write,:] = uncertainties
         self.n_write += 1
 
+    def store(self, orbit, vdark, **kwargs):
+        '''
+        Store new variable dark values in database. Automatically checks whether to replace or append.
+        '''
+        if self.new_entry(orbit):
+            self.append(orbit, vdark, **kwargs)
+        else:
+            self.replace(orbit, vdark, **kwargs)
+        return
+
     def close( self ):
         self.fid.close()
 
@@ -274,6 +284,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     print("get darks..")
     n_darks, dummy, pets, coadds, readouts, noise, ephases = ad.get_range(orbit_range)
+    eorbits = ephases.astype(np.int32)
     print("done.")
 
     #
@@ -298,7 +309,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     n_l = np.sum(idxl)
     idxr = ephasesi == int(xmax)
     n_r = np.sum(idxr)
-    #print(n_l, n_r)
     ephases = np.concatenate((ephases[idxl]-1., ephases, ephases[idxr]+1.))
     pets = np.concatenate((pets[idxl], pets, pets[idxr]))
     coadds = np.concatenate((coadds[idxl], coadds, coadds[idxr]))
@@ -314,7 +324,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     thermal_background = readouts
     i_orbit = 0
     m = 0
-    eorbits = ephases.astype(np.int32)
     for orbit in in_orblist[:]:
         aos = inter_aos[i_orbit,:] 
         n = np.sum(eorbits == orbit)
@@ -351,15 +360,16 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     uncertainties = np.empty([n_tpts, n_pix])
 
     for orbit in orbrange:
-        print(orbit)
+        print(orbit, useTrendFit)
         if useTrendFit:
             # use least-means fit to find lc and trend. slower, but more accurate. 
             # this works because all parameters are now fixed except lc and trend. 
-            aos = inter_aos[i_orbit,:]
-            amps = inter_amps[i_orbit,:]
-            channel_phase1 = inter_phases[i_orbit,0]
-            channel_phase2 = inter_phases[i_orbit,1]
-            channel_amp2 = inter_amp2[i_orbit]
+            idx = np.where(in_orblist[:] == orbit)[0][0]
+            aos = inter_aos[idx,:]
+            amps = inter_amps[idx,:]
+            channel_phase1 = inter_phases[idx,0]
+            channel_phase2 = inter_phases[idx,1]
+            channel_amp2 = inter_amp2[idx]
 
             try:
                 #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
@@ -387,10 +397,12 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             datapoint_count[i_orbit] = idx.size
             local_phi = ephases[idx]
             local_y = thermal_background[idx,:]
+            print("local_y=", local_y[:,pixnr])
             abs_dist1 = np.abs(local_phi - (trending_phase+orbit))
             idx1 = (np.argsort(abs_dist1))[0:6]
             phi1 = np.mean(local_phi[idx1])
             avg1 = np.mean(local_y[idx1,:], axis=0)
+            print("avg1=", avg1[pixnr])
             trending_phis[i_trend] = phi1
             trending_ys[i_trend,:] = avg1
             trending_orbits[i_trend] = orbit
@@ -475,30 +487,21 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         xnew_ = xnew[idx]
         if pixnr is not None:
             p = aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
-            wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt)
-            full_wave[idx] = wave_ + f(xnew_)
+            wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no lc offset
+            full_wave[idx] = wave_ + f(xnew_) # add interpolated lc offset (daily+seasonal variation)
         else:
             for i_pix in range(n_pix):
                 p = aos[i_pix], lcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
-                wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt)
-                wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ 
+                wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no lc offset
+                wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ # add interpolated lc offset (daily+seasonal variation)
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
-            if vddb.new_entry(orbit):
-                if useTrendFit:
-                    if i_trend >= 0:
-                        vddb.append(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
-                    else:
-                        vddb.append(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
+            if useTrendFit:
+                if i_trend >= 0:
+                    vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
                 else:
-                    vddb.append(orbit, wave)
+                    vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
             else:
-                if useTrendFit:
-                    if i_trend >= 0:
-                        vddb.replace(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
-                    else:
-                        vddb.append(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
-                else:
-                    vddb.append(orbit, wave)
+                vddb.store(orbit, wave)
         i += 1
 
     fin.close() # close interpolated monthlies database, won't be needing it anymore
@@ -510,9 +513,14 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         plt.ticklabel_format(useOffset=False)
         print(plot_x.shape, plot_y.shape)
         print(trending_phis.shape, trending_ys.shape)
+        plt.title("Variable dark current for pixel "+str(pixnr)+", ch8")
+        plt.xlabel("Orbit number")
+        plt.ylabel("Dark current (BU/s)")
         plt.plot(plot_x,plot_y,'v', trending_phis, trending_ys[:,pixnr], 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--', xnew, full_wave,'-')
         plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct'], loc='best')
         plt.show()
+
+    return
 
 #-- main -----------------------------------------------------------------------
 
@@ -536,7 +544,8 @@ if __name__ == "__main__":
     n_pix = n_chanpix
     pts_per_orbit = 50
     #path = "/array/slot0B/SDMF/3.1/pieter" # risky.. might lead to overwriting over production database
-    path = "./" # default.. safe 
+    path = "/SCIA/SDMF31/pieter"
+    #path = "./" # default.. safe 
 
     #
     # parse command line arguments
@@ -623,13 +632,16 @@ if __name__ == "__main__":
     # open or create output database 
     #
 
-    vddb = VarDarkdb(dbname, sz_phase=pts_per_orbit, sz_channel=n_pix)
+    if pixnr is not None:
+        vddb = None
+    else:
+        vddb = VarDarkdb(dbname, sz_phase=pts_per_orbit, sz_channel=n_pix)
 
     #
     # do the work
     #
 
-    generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=pixnr, useTrendFit=True)
+    generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=pixnr, useTrendFit=useTrendFit)
 
     #
     # close down the output database

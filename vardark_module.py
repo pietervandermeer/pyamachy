@@ -203,7 +203,35 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     """
     fit dark model to an orbits with normal (eclipse) dark states
     use parameters computed from nearest calibration orbits
+
+    Parameters
+    ----------
+
+    alldarks : AllDarks object
+        used to get underlying dark states from sdmf database in an easy and unambiguous way
+    orbit : int
+        absolute orbit number
+    aos : numpy array, 1024 floats 
+        analog offset per pixel for this orbit
+    lcs : numpy array, 1024 floats 
+        leakage current (constant part) per pixel for this orbit
+    amps : numpy array, 1024 floats 
+        orbital variation amplitude per pixel for this orbit
+    channel_amp2 : float
+        amplitude of first harmonic of orbital variation (channel mean)
+    channel_phaseshift : float
+        phase shift of orbital variation (channel mean)
+    channel_phaseshift2 : float
+        phase shift of first harmonic orbital variation (channel mean)
+    give_errors : bool, optional
+        if set, return also fit uncertainty
+    verbose : bool, optional
+        if set, provide verbose output
     """
+
+    #
+    # get all dark data
+    # 
 
     orbit_range = orbit, orbit+2
     #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
@@ -213,10 +241,14 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         raise Exception("Not enough datapoints for fit:", ephases.size)
 
     #
-    # fit it
+    # initialize data points (coadd is always 1 as we only do ch8 nadir)
     #
 
     x = ephases-orbit, pet #, coadd
+
+    #
+    # setup attributes of fit parameters
+    #
 
     # note the limits are just slightly wider than in the monthly fit. we do this to get rid of float32->float64 conversion errors!
     aoinfo = dict(fixed=True, limits=[-0.1,10000.1])
@@ -228,7 +260,10 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     phase2info = dict(fixed=True, limits=[-3.01,+3.01])
     parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
 
-    # ..and fit
+    #
+    # setup result data arrays
+    #
+
     n_done = 0
     statuses = numpy.zeros(n_pix)
     res_trends = numpy.empty(n_pix)
@@ -241,13 +276,17 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     err_lcs[:] = numpy.nan
     uncertainty = numpy.empty(n_pix)
     uncertainty[:] = numpy.nan
+
+    #
+    # ..and fit
+    #
+
     for pixnr in range(n_pix):
         # prepare initial parameters.. 
         p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
         if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)) and (x[0].size > 0):
-            #print(orbit, pixnr, x)
             #print(orbit, pixnr, p0, parinfo)
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
