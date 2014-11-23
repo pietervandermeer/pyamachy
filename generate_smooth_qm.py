@@ -156,18 +156,58 @@ def compare_smoothmasks():
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import argparse
+    from envisat import parseOrbitList
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
-    # TODO: commandline interface
-    sdmf30_compat = True
     num_pixels = 1024
 
     #
-    # load all pixel quality data, figure by figure
+    # parse command line arguments
+    #
+
+    parser = argparse.ArgumentParser(description='Smooths channel 8 pixel quality mask.')
+    parser.add_argument('-o', '--output', dest='output_fname', type=str)
+    parser.add_argument('-c', action='store_true', dest="sdmf30_compat")
+    parser.add_argument('--config', dest='config_file', type=file, 
+                        default='default3.2.cfg')
+    parser.add_argument('-v', '--verbose', dest='verbose', 
+                        action='store_true')
+    parser.add_argument('-V', '--version', action='version', 
+                        version='%(prog)s 0.1')
+    parser.add_argument('-P', '--path', dest='path')
+    parser.add_argument('--plot', action='store_true')
+    parser.add_argument('--orbitrange', default='all', 
+                        help='sets orbit range f.e. "43000-44000", "all"', type=parseOrbitList)
+    parser.add_argument('-p', '--pixnr', action='store', type=int, default=None,
+                        dest='pixnr', help="pixel number to be examined [0..1023]")
+    args = parser.parse_args()
+
+    #
+    # handle command line arguments
     #
 
     start_orbit = 5593
     end_orbit = 53000
+    output_fname = "sdmf_smooth_pyxelmask.h5"
+
+    sdmf30_compat = args.sdmf30_compat
+    verbose = args.verbose
+    orbitrange = args.orbitrange
+    if orbitrange is not None:
+        start_orbit = orbitrange[0]
+        end_orbit = orbitrange[1]
+    
+    if args.output_fname is not None:
+        output_fname = args.output_fname
+
+    print("output_fname =", output_fname)
+    print("sdmf30_compat =", sdmf30_compat)
+    print("orbitrange =", start_orbit, end_orbit)
+
+    #
+    # load all pixel quality data, figure by figure
+    #
 
     orbits, inv_data = load_sdmf32_figure(start_orbit, end_orbit, "invalid")
     print("read invalid")
@@ -231,7 +271,8 @@ if __name__ == "__main__":
 
     print("writing hdf5..")
 
-    fid = h5py.File("sdmf_smooth_pyxelmask.h5", "w")
+    fid = h5py.File(output_fname, "w")
+    fid.attrs['sdmf30_compat']=sdmf30_compat
 
     fid.create_dataset("orbits", orbits.shape, dtype=np.int, data=orbits)
     fid.create_dataset("invalid", inv_smooth.shape, dtype=np.float, data=inv_smooth)

@@ -963,7 +963,7 @@ if __name__ == '__main__':
     p = PixelQuality(sdmf30_compat=True)
     print("initialised.")
 
-    for orbit in range(42000,43400):
+    for orbit in range(5993,53200):
 #    for orbit in range(42999,43001):
         try:
             p.calculate(orbit)

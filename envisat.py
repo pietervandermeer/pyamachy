@@ -28,6 +28,26 @@ import ctypes as ct
 
 last_orbit = 53200
 
+def parseOrbitList(str):
+    msg1 = "'" + str + "' is not a range or number." \
+        + " Expected forms like '20000-25000' or '20000'."
+    msg2 = "'" + str + "' is not valid orbit number."
+
+    if str.lower() == 'all':
+        return None
+
+    m = re.match(r'(\d+)(?:-(\d+))?$', str)
+    if not m:
+        raise ArgumentTypeError( msg1 )
+    v1 = int(m.group(1))
+    if m.group(2):
+        v2 = int(m.group(2))
+        if v1 < 1 or v2 > last_orbit:
+            raise ArgumentTypeError( msg2 )
+        return (v1, v2)
+    else:
+        return v1
+
 # returns MJD dates (starting 1-1-1) for given ENVISAT absolute orbit numbers
 def convert_orbit_to_jd(orbit_list, pole_phase=None):
     orbit_change = 45222 # OrbitChangeNumber

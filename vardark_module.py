@@ -359,11 +359,11 @@ class AllDarks():
         register orbit range and automatically remove overlap
         """
         self.range_list.append((orbit_range[0], orbit_range[1])) # make sure we're entering tuples into the list!
-        print("post append:", self.range_list)
+        #print("post append:", self.range_list)
         self.range_list = remove_overlap(self.range_list)
-        print("post remove_overlap:", self.range_list)
+        #print("post remove_overlap:", self.range_list)
         self.range_list = merge_ranges(self.range_list)
-        print("post merge:", self.range_list)
+        #print("post merge:", self.range_list)
         return
 
     def is_registered(self, orbit_range):
@@ -461,12 +461,12 @@ class AllDarks():
             if first_orbit < 43362 and last_orbit >= 43362:
                 print("lump upto 43361")
                 self._lumpl([first_orbit, 43361])
-                print("LO???",self.range_list)
+                #print("LO???",self.range_list)
                 print("lump from 43362")
                 self._lumpr([43362, last_orbit])
-                print("HI???",self.range_list)
+                #print("HI???",self.range_list)
             else:
-                print("buffer_range(): lumplr", orbit_range)
+                #print("buffer_range(): lumplr", orbit_range)
                 self._lumplr(orbit_range)
             self._finalize()
 

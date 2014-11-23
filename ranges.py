@@ -59,10 +59,10 @@ def merge_ranges(ranges):
 # test if range is fully contained in ranges
 def is_in_range(ranges, range):
     for start, stop in sorted(ranges):
-        print("is_in_range", range, start, stop)
+        #print("is_in_range", range, start, stop)
         if start <= range[0] and stop >= range[1]:
             return True
-    print(" not found")
+    #print(" not found")
     return False
 
 class RangesTestCase(unittest.TestCase):

@@ -10,7 +10,7 @@ import h5py
 class VarDarkdb:
     '''
     '''
-    def create(self, h5_name, sz_phase=50, sz_channel=1024):
+    def create(self, h5_name, sz_phase=50, sz_channel=1024, use_trendfit=False, short_pet=False):
         '''
         initialize HDF5 file
         '''
@@ -31,6 +31,9 @@ class VarDarkdb:
         # create HDF5 file
         self.fp = h5py.h5f.create( self.h5_name, fapl=propfaid )
         self.fid = h5py.File( self.fp )
+
+        self.fid.attrs['trendfit'] = use_trendfit
+        self.fid.attrs['short_pet'] = short_pet
 
         #
         # define dimensions and datasets in HDF5 file
@@ -78,7 +81,7 @@ class VarDarkdb:
 
         return
 
-    def open(self, h5_name, sz_phase=50, sz_channel=1024):
+    def open(self, h5_name, sz_phase=50, sz_channel=1024, use_trendfit=False, short_pet=False):
         self.h5_name = np.string_(h5_name)
 
         # TODO: check if this matches the existing db's dimensions
@@ -89,6 +92,11 @@ class VarDarkdb:
             self.fid = h5py.File(h5_name, "r+")
         except IOError:
             raise Exception("unable to open hdf5 file "+h5_name)
+
+        if self.fid.attrs['trendfit'] != use_trendfit:
+            raise Exception("hdf5 file "+h5_name+" has wrong attributes.")
+        if self.fid.attrs['short_pet'] != short_pet:
+            raise Exception("hdf5 file "+h5_name+" has wrong attributes.")
 
         try:
             self.ds_orbit = self.fid["dim_orbit"]
@@ -194,26 +202,6 @@ class VarDarkdb:
     def close( self ):
         self.fid.close()
 
-def parseOrbitList(str):
-    msg1 = "'" + str + "' is not a range or number." \
-        + " Expected forms like '20000-25000' or '20000'."
-    msg2 = "'" + str + "' is not valid orbit number."
-
-    if str.lower() == 'all':
-        return None
-
-    m = re.match(r'(\d+)(?:-(\d+))?$', str)
-    if not m:
-        raise ArgumentTypeError( msg1 )
-    v1 = int(m.group(1))
-    if m.group(2):
-        v2 = int(m.group(2))
-        if v1 < 1 or v2 > 100000:
-            raise ArgumentTypeError( msg2 )
-        return (v1, v2)
-    else:
-        return v1
-
 def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None, useTrendFit=True):
     """
     Generate vardark product for specified orbits and from specified input database.
@@ -302,19 +290,20 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     xmax = np.max(ephases)
     print("done.")
 
-    print("extending borders..")
-    ephasesi = ephases.astype(np.int32)
-    print(ephasesi, xmin, xmax)
-    idxl = ephasesi == int(xmin)
-    n_l = np.sum(idxl)
-    idxr = ephasesi == int(xmax)
-    n_r = np.sum(idxr)
-    ephases = np.concatenate((ephases[idxl]-1., ephases, ephases[idxr]+1.))
-    pets = np.concatenate((pets[idxl], pets, pets[idxr]))
-    coadds = np.concatenate((coadds[idxl], coadds, coadds[idxr]))
-    readouts = np.concatenate((readouts[idxl,:], readouts, readouts[idxr,:]))
-    noise = np.concatenate((noise[idxl,:], noise, noise[idxr,:]))
-    print("done.")
+# may be useless.. as trending limits itself to single points per orbit
+#    print("extending borders..")
+#    ephasesi = ephases.astype(np.int32)
+#    print(ephasesi, xmin, xmax)
+#    idxl = ephasesi == int(xmin)
+#    n_l = np.sum(idxl)
+#    idxr = ephasesi == int(xmax)
+#    n_r = np.sum(idxr)
+#    ephases = np.concatenate((ephases[idxl]-1., ephases, ephases[idxr]+1.))
+#    pets = np.concatenate((pets[idxl], pets, pets[idxr]))
+#    coadds = np.concatenate((coadds[idxl], coadds, coadds[idxr]))
+#    readouts = np.concatenate((readouts[idxl,:], readouts, readouts[idxr,:]))
+#    noise = np.concatenate((noise[idxl,:], noise, noise[idxr,:]))
+#    print("done.")
 
     #
     # subtract interpolated analog offset to get thermal signal, and normalize by time
@@ -360,37 +349,39 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     uncertainties = np.empty([n_tpts, n_pix])
 
     for orbit in orbrange:
-        print(orbit, useTrendFit)
+        print(orbit)
         if useTrendFit:
             # use least-means fit to find lc and trend. slower, but more accurate. 
             # this works because all parameters are now fixed except lc and trend. 
-            idx = np.where(in_orblist[:] == orbit)[0][0]
-            aos = inter_aos[idx,:]
-            amps = inter_amps[idx,:]
-            channel_phase1 = inter_phases[idx,0]
-            channel_phase2 = inter_phases[idx,1]
-            channel_amp2 = inter_amp2[idx]
+            idx = in_orblist[:] == orbit
+            if np.sum(idx) > 0:
+                idx = np.where(idx)[0][0]
+                aos = inter_aos[idx,:]
+                amps = inter_amps[idx,:]
+                channel_phase1 = inter_phases[idx,0]
+                channel_phase2 = inter_phases[idx,1]
+                channel_amp2 = inter_amp2[idx]
 
-            try:
-                #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
-                list_ = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True, verbose=False)
-                x__, lcs_, res_trends, err_lcs_, err_trends_, dum1, dum2, uncertainty = list_
-                err_lcs[i_trend, :] = err_lcs_
-                err_trends[i_trend, :] = err_trends_
+                try:
+                    #x__, lcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2)
+                    list_ = fit_eclipse_orbit(ad, orbit, aos, lcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True, verbose=False)
+                    x__, lcs_, res_trends, err_lcs_, err_trends_, dum1, dum2, uncertainty = list_
+                    err_lcs[i_trend, :] = err_lcs_
+                    err_trends[i_trend, :] = err_trends_
 
-                datapoint_count[i_orbit] = x__[0].size
-                uncertainties[i_trend,:] = uncertainty
-                for i_pix in range(n_pix):
-                    p = aos[i_pix], lcs_[i_pix], amps[i_pix], res_trends[i_pix], channel_phase1, channel_amp2, channel_phase2
-                    trending_ys[i_trend, i_pix] = scia_dark_fun2m(p, xt)
-                avg_phi += trending_phase
-                trending_phis[i_trend] = trending_phase+orbit
-                trending_orbits[i_trend] = orbit
-                i_trend += 1
-            except Exception as e:
-                # just skip to next orbit and don't store any data, but do log a warning!
-                logging.warning("failed to fit orbit.. "+str(e))
-                datapoint_count[i_orbit] = 0         
+                    datapoint_count[i_orbit] = x__[0].size
+                    uncertainties[i_trend,:] = uncertainty
+                    for i_pix in range(n_pix):
+                        p = aos[i_pix], lcs_[i_pix], amps[i_pix], res_trends[i_pix], channel_phase1, channel_amp2, channel_phase2
+                        trending_ys[i_trend, i_pix] = scia_dark_fun2m(p, xt)
+                    avg_phi += trending_phase
+                    trending_phis[i_trend] = trending_phase+orbit
+                    trending_orbits[i_trend] = orbit
+                    i_trend += 1
+                except Exception as e:
+                    # just skip to next orbit and don't store any data, but do log a warning!
+                    logging.warning("failed to fit orbit.. "+str(e))
+                    datapoint_count[i_orbit] = 0         
         else:
             # faster, but less accurate
             idx = (ephases >= orbit) & (ephases < (orbit+1))
@@ -451,12 +442,16 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     xnewi = xnew.astype(np.int32)
     print("generating interpolators..")
+    # extend range for interpolation
+    trending_phis = np.concatenate((trending_phis[:1].astype('i'),trending_phis,trending_phis[-1:].astype('i')+1))
     if pixnr is not None:
+        trending_ys = np.concatenate((trending_ys[:1],trending_ys,trending_ys[-1:]))
         f = interp1d(trending_phis, trending_ys[:,pixnr])
         f2 = interp1d(trending_phis, trending_ys[:,pixnr], kind='cubic')
     else:
-        print(trending_phis.shape, trending_ys.shape)
-        #print(trending_phis)
+        trending_ys = np.concatenate((trending_ys[:1,:],trending_ys,trending_ys[-1:,:]))
+        #print(trending_phis.shape, trending_ys.shape)
+        print(trending_phis)
         f = interp1d(trending_phis, trending_ys, axis=0)
     print("done.")
 
@@ -494,6 +489,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 p = aos[i_pix], lcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
                 wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no lc offset
                 wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ # add interpolated lc offset (daily+seasonal variation)
+            #print(xnew_)
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
             if useTrendFit:
                 if i_trend >= 0:
@@ -540,12 +536,13 @@ if __name__ == "__main__":
     from sciamachy_module import get_darkstateid, petcorr, n_chanpix
     from vardark_module import AllDarks, trending_phase, fit_eclipse_orbit
     import envisat
+    from envisat import parseOrbitList
 
     n_pix = n_chanpix
     pts_per_orbit = 50
-    #path = "/array/slot0B/SDMF/3.1/pieter" # risky.. might lead to overwriting over production database
-    path = "/SCIA/SDMF31/pieter"
-    #path = "./" # default.. safe 
+    #path = "/array/slot0B/SDMF/3.1/pieter" # risky.. might lead to overwriting production database
+    #path = "/SCIA/SDMF31/pieter"
+    path = "./" # default.. safe 
 
     #
     # parse command line arguments
@@ -560,6 +557,7 @@ if __name__ == "__main__":
                         action='store_true')
     parser.add_argument('-V', '--version', action='version', 
                         version='%(prog)s 0.1')
+    parser.add_argument('-P', '--path', dest='path')
     parser.add_argument('--plot', action='store_true')
     parser.add_argument('--orbitrange', default='all', 
                         help='sets orbit range f.e. "43000-44000", "all"', type=parseOrbitList)
@@ -575,6 +573,9 @@ if __name__ == "__main__":
     #
     # handle command line arguments
     #
+
+    if args.path is not None:
+        path = args.path
 
     # override default output db name and path when output db specified!
     if args.output_fname:
@@ -635,7 +636,9 @@ if __name__ == "__main__":
     if pixnr is not None:
         vddb = None
     else:
-        vddb = VarDarkdb(dbname, sz_phase=pts_per_orbit, sz_channel=n_pix)
+        vddb = VarDarkdb(dbname, 
+                         sz_phase=pts_per_orbit, sz_channel=n_pix, 
+                         use_trendfit=useTrendFit, short_pet=args.shortMode)
 
     #
     # do the work
