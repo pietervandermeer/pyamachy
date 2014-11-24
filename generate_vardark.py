@@ -521,7 +521,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 #-- main -----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import re
     import argparse
     from argparse import ArgumentParser, ArgumentTypeError
     import subprocess

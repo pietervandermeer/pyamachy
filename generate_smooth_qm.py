@@ -39,14 +39,27 @@ def smooth(orbits, data, winsize=50):
 
     smoothed = np.empty(data.shape, dtype=np.float64)
     num_orbits = data.shape[0]
+    #print(num_orbits)
+
+    #
+    # sort data rows on orbit number
+    #
+
+    idx = np.argsort(orbits)
+    #print("sorted orbits", orbits[idx])
+    #print("raw data", data)
+    data = data[idx,:]
+    #print("indexed data", data)
 
     for i_orbit in range(num_orbits):
-        if i_orbit < winsize/2:
-            window = np.arange(0, i_orbit+winsize/2, dtype=np.int)
-        elif i_orbit >= num_orbits - winsize/2:
-            window = np.arange(i_orbit-winsize/2, num_orbits, dtype=np.int)
-        else:
-            window = np.arange(i_orbit-winsize/2, i_orbit+winsize/2, dtype=np.int)
+        upper = i_orbit + winsize/2
+        lower = i_orbit - winsize/2
+        if upper > num_orbits:
+            upper = num_orbits
+        if lower < 0:
+            lower = 0
+        window = np.arange(lower, upper, dtype=np.int)
+        #print(window)
         smoothed[i_orbit, :] = np.mean(data[window,:], axis=0)
 
     return smoothed
@@ -83,17 +96,29 @@ def load_sdmf32_figure(start_orbit, end_orbit, fig_name):
     fname = "sdmf_pyxelmask.h5"
     fid = h5py.File(fname, "r")
     ds_orbits = fid["orbits"]
-    idx = np.argsort(ds_orbits[:])
-    orbits32 = ds_orbits[:][idx]
-    start_orbit = np.min(orbits32)
-    stop_orbit = np.max(orbits32)
-    orbit_range = stop_orbit - start_orbit + 1
+    orbits = ds_orbits[:]
+
+    idx = np.argsort(orbits[(orbits >= start_orbit) & (orbits <= end_orbit)])
+    #print(idx)
+
+    orbits32 = orbits[(orbits >= start_orbit) & (orbits <= end_orbit)][idx]
+    #print("orbits32", orbits32)
+
+    orbit_range = end_orbit - start_orbit + 1
     ds_combi = fid[fig_name]
     num_orbits = idx.size
     a = np.empty((num_orbits,1024), dtype=np.float)
-    for i_orbit in range(num_orbits):
-        id_ = idx[i_orbit]
-        a[i_orbit,:] = ds_combi[id_,:]
+    i_row = 0
+    for orbit in orbits32:
+        i_orbit = np.where(orbit == ds_orbits[:])[0][0]
+        #print(ds_combi.dtype)
+        if ds_combi.dtype != np.bool:
+            a[i_row,:] = np.nan_to_num(ds_combi[i_orbit,:])
+        else:
+            a[i_row,:] = ds_combi[i_orbit,:]
+        i_row += 1
+
+        #print("i_orbit", i_orbit, "row", a[i_row,:])
     fid.close()
     return orbits32, a 
 
@@ -230,13 +255,14 @@ if __name__ == "__main__":
         print("read darkResidual")
 
     num_orbits = orbits.size
+    print("orbits.size", orbits.size, "inv_data.shape", inv_data.shape)
 
     #
     # smooth the figures
     #
 
     print("smoothing..")
-    inv_smooth = smooth(orbits, sat_data)
+    inv_smooth = 1.0 - smooth(orbits, inv_data) # input was boolean flags (1: bad, 0: good).. so inverted
     sat_smooth = smooth(orbits, sat_data)
     sun_smooth = smooth(orbits, sun_data, winsize=100)
     wls_smooth = smooth(orbits, wls_data, winsize=500)
@@ -256,12 +282,13 @@ if __name__ == "__main__":
  
     combined = np.empty(sat_data.shape, dtype=np.float64)
 
-    for i_orbit in range(num_orbits):
-        if sdmf30_compat:
-            combined = inv_smooth * chi_smooth * (noise_smooth**2) * sat_smooth * sun_smooth * wls_smooth
-        else:
-            # TODO: use weights from config file
-            combined = inv_smooth * (0.5*darkerr_smooth + 0.5*darkres_smooth) * sat_smooth * sun_smooth * wls_smooth
+    if sdmf30_compat:
+        combined = inv_smooth * chi_smooth * (noise_smooth*noise_smooth) * sat_smooth * sun_smooth * wls_smooth
+    else:
+        # TODO: use weights from config file
+        combined = inv_smooth * (0.5*darkerr_smooth + 0.5*darkres_smooth) * sat_smooth * sun_smooth * wls_smooth
+
+    combined_flag = np.nan_to_num(combined) < 0.1
 
     print("combined.")
 
@@ -275,6 +302,8 @@ if __name__ == "__main__":
     fid.attrs['sdmf30_compat']=sdmf30_compat
 
     fid.create_dataset("orbits", orbits.shape, dtype=np.int, data=orbits)
+    fid.create_dataset("combined", combined.shape, dtype=np.float, data=combined)
+    fid.create_dataset("combinedFlag", combined_flag.shape, dtype=np.bool, data=combined_flag)
     fid.create_dataset("invalid", inv_smooth.shape, dtype=np.float, data=inv_smooth)
     fid.create_dataset("saturation", sat_smooth.shape, dtype=np.float, data=sat_smooth)
     fid.create_dataset("sunResponse", sun_smooth.shape, dtype=np.float, data=sun_smooth)

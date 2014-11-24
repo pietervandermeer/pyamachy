@@ -656,7 +656,7 @@ class PixelQuality:
         except IOError as e:
             print("creating db "+db_fname+"...")
             f = h5py.File(db_fname,'w')
-            print('creating meta data')
+            f.attrs["sdmf30_compat"] = self.sdmf30_compat
             orbits = np.array([orbit], dtype='u2')
             entry_dates = np.array([nowstr]) 
             f.create_dataset("orbits", (0,), dtype='u2', 
@@ -684,6 +684,9 @@ class PixelQuality:
 
         if h5py.h5f.is_hdf5(db_fname):
             f = h5py.File(db_fname)
+
+            if self.sdmf30_compat != f.attrs["sdmf30_compat"]:
+                raise Exception("db file has different SDMF3.0 compatibility than PixelQuality object!")
             
             # check if orbit already present..
             dset = f['orbits']
@@ -963,7 +966,7 @@ if __name__ == '__main__':
     p = PixelQuality(sdmf30_compat=True)
     print("initialised.")
 
-    for orbit in range(5993,53200):
+    for orbit in range(30630,53200):
 #    for orbit in range(42999,43001):
         try:
             p.calculate(orbit)

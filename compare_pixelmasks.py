@@ -357,6 +357,147 @@ def print_vardark(orbit, pixnr):
 
     return
 
+def plot_30_smooth_evo(pixnr):
+    """
+    Plot evolution of one pixel in SDMF3.0 smoothmask.
+
+    Parameters
+    ----------
+    
+    pixnr : int
+        detector pixel number [0..8191]
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = "smoothMask/"
+    ds_orbits = fid30[grpname+"orbitList"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combined"]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([-.1,1.1])
+    fig.set_title("SDMF3.0 smooth mask, Pixel "+str(pixnr-7*1024))
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, ds_combined30[pixnr,:], 'bo')
+    plt.show()
+    return
+
+def plot_32_orbital_evo(pixnr):
+    """
+    Plot evolution of one pixel in SDMF3.0 smoothmask.
+
+    Parameters
+    ----------
+    
+    pixnr : int
+        detector pixel number [0..8191]
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "sdmf_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combinedFlag"]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([-.1,1.1])
+    fig.set_title("SDMF3.0 smooth mask, Pixel "+str(pixnr-7*1024))
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, ds_combined30[:,pixnr-7*1024], 'bo')
+    plt.show()
+    return
+
+def plot_30_smooth_evos():
+    import matplotlib.pyplot as plt
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = "smoothMask/"
+    ds_orbits = fid30[grpname+"orbitList"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combined"]
+    combined = ds_combined30[7*1024+394:7*1024+621,:]
+
+    for pixnr in range(620-394):
+        plt.cla()
+        fig = plt.subplot(111)
+        fig.set_ylim([-.1,1.1])
+        fig.set_title("IMLM window pixel "+str(pixnr))
+        plt.ticklabel_format(useOffset=False)
+        plt.plot(orbits, combined[pixnr,:], 'bo')
+        plt.show()
+    return
+
+def diff_30_evos(smooth=False):
+    import matplotlib.pyplot as plt
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    if smooth:
+        grpname = "smoothMask/"
+    else:
+        grpname = "orbitalMask/"
+    ds_orbits = fid30[grpname+"orbitList"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combined"]
+    combined = ds_combined30[7*1024+394:7*1024+621,:]
+
+    jumps = np.empty(620-394+1, dtype=np.int)
+    i = 0
+    for pixnr in range(620-394):
+        jumps[i] = np.sum(np.abs(np.diff(combined[pixnr,:])))
+        i += 1
+    idx = np.argsort(jumps)
+    for i in idx:
+        print("pix", 394+i, "num jumps=", jumps[i])
+    return
+
+def diff_32_orbital_evos():
+    fname = "sdmf_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combinedFlag"]
+    combined = ds_combined30[:,394:621]
+
+    jumps = np.empty(620-394+1, dtype=np.int)
+    i = 0
+    for pixnr in range(620-394):
+        sum_ = np.sum(np.abs(np.diff(combined[:,pixnr])))
+        jumps[i] = sum_
+        i += 1
+    idx = np.argsort(jumps)
+    for i in idx:
+        print("pix", 394+i, "num jumps=", jumps[i])
+    return
+
+def diff_32_smooth_evos():
+    fname = "sdmf_smooth_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+"combinedFlag"]
+    combined = ds_combined30[:,394:621]
+
+    jumps = np.empty(620-394+1, dtype=np.int)
+    i = 0
+    for pixnr in range(620-394):
+        sum_ = np.sum(np.abs(np.diff(combined[:,pixnr])))
+        jumps[i] = sum_
+        i += 1
+    idx = np.argsort(jumps)
+    for i in idx:
+        print("pix", 394+i, "num jumps=", jumps[i])
+    return
+
 def print_30_vs_32_fit_quality(orbit):
     """ 
     Print flagging criteria for SDMF3.0 vs SDMF3.2 for each pixel.
@@ -419,6 +560,26 @@ def print_noisemodel(pixnr):
 
 if __name__ == "__main__":
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+
+#    for pixnr in range(7*1024+394,7*1024+621):
+#        plot_30_smooth_evo(pixnr)
+
+    # diff_30_evos(smooth=False)
+    # print()
+    # diff_32_orbital_evos()
+    diff_30_evos(smooth=True)
+    print()
+    diff_32_smooth_evos()
+
+    plot_30_smooth_evo(7*1024+431)
+    #plot_32_orbital_evo(7*1024+431)
+    plot_32_smooth_evo(7*1024+431)
+    quit()
+
+    plot_30_smooth_evo(7*1024+394+24)
+    plot_30_smooth_evo(7*1024+394+26)
+    plot_30_smooth_evo(7*1024+394+37)
+    plot_30_smooth_evo(7*1024+394+42)
 
     #print_new_dead_new_alive()
     #print_dead_quality()
