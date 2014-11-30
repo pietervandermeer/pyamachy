@@ -17,6 +17,7 @@ from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark_module import load_varkdark_orbit, read_ch8_darks
 from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr, NoiseModel
+import config32
 
 #-- functions ------------------------------------------------------------------
 
@@ -95,7 +96,7 @@ class PixelQuality:
         fname = 'default3.2.cfg'
         cfg_file = open(fname)
         try:
-            self.cfg = self.get_config(cfg_file)
+            self.cfg = config32.load(cfg_file)
         except ConfigParser.NoOptionError, ex:
             msg = "There was a missing option in the configuration file '"
             logging.exception(msg+fname)
@@ -205,74 +206,6 @@ class PixelQuality:
         idx = np.argmax(idx)
         return self.ds_noise10[idx,:]
 
-    def get_config_floats(self, tags, parser, part):
-        """
-        parse floating point variables from config and put them in a dict under the desired tags 
-        """
-        d = {}
-        for tag in tags:
-            d[tag] = float(parser.get(part, tag))
-        return d
-
-    def get_config_floatlists(self, tags, parser, part):
-        """
-        parse comma-separated lists of floats from config and put them in a dict under the desired tags 
-        """
-        d = {}
-        for tag in tags:
-            string = parser.get(part, tag)
-            d[tag] = [float(s) for s in string.split(',')]
-        return d
-
-    def get_config(self, config_file):
-        """ 
-        load configuration from file 
-
-        Parameters
-        ----------
-
-        config_file : string
-            name of the configuration file
-
-        Returns
-        -------
-        get_config : dict
-            contains all relevant configuration settings as readily-usable types (int, boolean, float, arrays instead of strings)
-        """
-        import string
-
-        parser=ConfigParser.SafeConfigParser()
-        parser.readfp(config_file)
-        d = {}
-
-        #
-        # parse file names
-        #
-
-        d['db_dir'] = parser.get('Global','masterdirectory')
-        d['extract_fname'] = parser.get('Global','extract_file')
-        d['dark_fname'] = parser.get('Global','dark_file')
-        d['pixelmask_fname'] = parser.get('Global','pixelmask_file')
-        d['statedarkch6p_fname'] = parser.get('Global','statedarkch6p_file')
-        d['statedarkch8_fname'] = parser.get('Global','statedarkch8_file')
-        d['darklimbch6_fname'] = parser.get('Global','darklimbch6_file')
-        d['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
-        d['darklimbch8_fname'] = parser.get('Global','darklimbch8_file')
-
-        #
-        # parse lists of floats.. useful for multi-channel configurations (although this class is single-channel.. it's left in for future)
-        #
-
-        floatlist_tags = ['dc_sat_time','dc_err_thres','res_thres','max_signal','deadflaggingstates']
-        proc_floatlists = self.get_config_floatlists(floatlist_tags, parser, 'Processor')
-
-        #
-        # parse floats (mostly thresholds and weights) used for channel 8 processing
-        #
-
-        float_tags = ['w_err','w_res','w_noise','w_sun','w_wls','thresh_sun','thresh_wls','max_noise']
-        proc_floats = self.get_config_floats(float_tags, parser, 'Processor')
-        return dict(d.items() + proc_floatlists.items() + proc_floats.items())
 
     def clip_figure(self, figure):
         nonan_idx = np.isfinite(figure)

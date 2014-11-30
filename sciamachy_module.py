@@ -62,7 +62,7 @@ class MemCorrector:
         # Parse config file, exit if unsuccessful
         #
         
-        config_fname = open('default3.1.cfg')
+        config_fname = open('default3.2.cfg')
         try:
             self.cfg = self.get_config(config_fname)
         except ConfigParser.NoOptionError, ex:
@@ -103,7 +103,7 @@ class NonlinCorrector:
         # Parse config file, exit if unsuccessful
         #
         
-        config_fname = open('default3.1.cfg')
+        config_fname = open('default3.2.cfg')
         try:
             self.cfg = self.get_config(config_fname)
         except ConfigParser.NoOptionError, ex:
@@ -176,7 +176,7 @@ class orbitfilter:
         # Parse config file, exit if unsuccessful
         #
         
-        config_fname = open('default3.1.cfg')
+        config_fname = open('default3.2.cfg')
         try:
             self.cfg = self.get_config(config_fname)
         except ConfigParser.NoOptionError, ex:

@@ -179,14 +179,6 @@ def print_criteria30(orbit, pixnr):
     """ 
     Print flagging criteria for SDMF3.0.
     """
-    m = Mask()
-
-    #
-    # first just print combined smoothmask
-    #
-
-    m.load_ascii(orbit)
-    print(np.where(m.mask))
 
     fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
     fid = h5py.File(fname, "r")
@@ -320,6 +312,26 @@ def print_noise30(orbit, pixnr):
 
     return
 
+def print_mean30(orbit, pixnr):
+    pets = 0.125, 0.5, 1.0
+    for pet in pets:
+        stateid = get_darkstateid(pet, orbit)
+        fname = "/SCIA/SDMF30/sdmf_extract_calib.h5"
+        fid = h5py.File(fname, "r")
+
+        grpname = "State_"+str('%02d'%stateid)+"/"
+        ds_orbits = fid[grpname+"orbitList"]
+        orbits = ds_orbits[:]
+        idx = orbit == orbits
+        if np.sum(idx) == 0:
+            raise Exception("orbit not in orbital mask")
+        i = np.argmax(idx)
+        print("i=",i)
+        ds_mean = fid[grpname+"readoutMean"]
+        print("SDMF3.0 mean("+str(pet)+")=", ds_mean[pixnr,i])
+
+    return
+
 def print_noise(orbit, pixnr):
     fname = "/SCIA/SDMF31/pieter/noise.h5"
     fid = h5py.File(fname, "r")
@@ -357,7 +369,7 @@ def print_vardark(orbit, pixnr):
 
     return
 
-def plot_30_smooth_evo(pixnr):
+def plot_30_smooth_evo(pixnr, crit_name="combined"):
     """
     Plot evolution of one pixel in SDMF3.0 smoothmask.
 
@@ -374,7 +386,7 @@ def plot_30_smooth_evo(pixnr):
     grpname = "smoothMask/"
     ds_orbits = fid30[grpname+"orbitList"]
     orbits = ds_orbits[:]
-    ds_combined30 = fid30[grpname+"combined"]
+    ds_combined30 = fid30[grpname+crit_name]
 
     plt.cla()
     fig = plt.subplot(111)
@@ -410,6 +422,100 @@ def plot_32_orbital_evo(pixnr):
     fig.set_title("SDMF3.0 smooth mask, Pixel "+str(pixnr-7*1024))
     plt.ticklabel_format(useOffset=False)
     plt.plot(orbits, ds_combined30[:,pixnr-7*1024], 'bo')
+    plt.show()
+    return
+
+def plot_32_smooth_evo(pixnr, fig_name="combinedFlag"):
+    """
+    Plot evolution of one pixel in SDMF3.0 smoothmask.
+
+    Parameters
+    ----------
+    
+    pixnr : int
+        detector pixel number [0..8191]
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "sdmf_smooth_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+fig_name]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([-.1,1.1])
+    fig.set_title("SDMF3.2 smooth mask, Pixel "+str(pixnr-7*1024))
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, ds_combined30[:,pixnr-7*1024], 'bo')
+    plt.show()
+    return
+
+def plot_30_smooth_chanevo(crit_name="combined"):
+    """
+    Plot evolution of nr of flagged pixels SDMF3.0 smoothmask, channel 8.
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "/SCIA/SDMF30/sdmf_pixelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = "smoothMask/"
+    ds_orbits = fid30[grpname+"orbitList"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+crit_name]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([0,1024])
+    fig.set_title("SDMF3.0 smooth mask "+crit_name+" evolution")
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, np.sum(ds_combined30[:,:], axis=0), 'bo')
+    plt.show()
+    return
+
+def plot_32_orbital_chanevo(fig_name="combinedFlag"):
+    """
+    Plot evolution of nr of flagged pixels SDMF3.2 smoothmask.
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "sdmf_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+fig_name]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([0,1024])
+    fig.set_title("SDMF3.2 orbital mask "+fig_name+" evolution")
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, 1024-np.sum(ds_combined30[:,:], axis=1), 'bo')
+    plt.show()
+    return
+
+def plot_32_smooth_chanevo(fig_name="combinedFlag"):
+    """
+    Plot evolution of nr of flagged pixels SDMF3.2 smoothmask.
+    """
+    import matplotlib.pyplot as plt
+
+    fname = "sdmf_smooth_pyxelmask.h5"
+    fid30 = h5py.File(fname, "r")
+    grpname = ""
+    ds_orbits = fid30[grpname+"orbits"]
+    orbits = ds_orbits[:]
+    ds_combined30 = fid30[grpname+fig_name]
+
+    plt.cla()
+    fig = plt.subplot(111)
+    fig.set_ylim([0,1024])
+    fig.set_title("SDMF3.2 smooth mask "+fig_name+" evolution")
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits, 1024-np.sum(ds_combined30[:,:], axis=1), 'bo')
     plt.show()
     return
 
@@ -556,46 +662,55 @@ def print_noisemodel(pixnr):
     print("noise model @ 0.125s:", nm.compute(pixnr, 0.125-petcorr, 6000.))
     return
 
-#-- main -----------------------------------------------------------------------
+def compare_jumpiness():
+    diff_30_evos(smooth=False)
+    print()
+    diff_32_orbital_evos()
 
-if __name__ == "__main__":
-    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
-
-#    for pixnr in range(7*1024+394,7*1024+621):
-#        plot_30_smooth_evo(pixnr)
-
-    # diff_30_evos(smooth=False)
-    # print()
-    # diff_32_orbital_evos()
     diff_30_evos(smooth=True)
     print()
     diff_32_smooth_evos()
 
     plot_30_smooth_evo(7*1024+431)
-    #plot_32_orbital_evo(7*1024+431)
     plot_32_smooth_evo(7*1024+431)
-    quit()
+    return
 
-    plot_30_smooth_evo(7*1024+394+24)
-    plot_30_smooth_evo(7*1024+394+26)
-    plot_30_smooth_evo(7*1024+394+37)
-    plot_30_smooth_evo(7*1024+394+42)
+def compare_invalid_evolution():
+    plot_30_smooth_chanevo(crit_name="invalid")
+    plot_32_orbital_chanevo(fig_name="invalid")
+    plot_32_smooth_chanevo(fig_name="invalid")
+    return
+
+#-- main -----------------------------------------------------------------------
+
+if __name__ == "__main__":
+    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+
+#    compare_jumpiness()
+#    compare_invalid_evolution()
+#    quit()
+
+    # plot_30_smooth_evo(7*1024+394+24)
+    # plot_30_smooth_evo(7*1024+394+26)
+    # plot_30_smooth_evo(7*1024+394+37)
+    # plot_30_smooth_evo(7*1024+394+42)
 
     #print_new_dead_new_alive()
     #print_dead_quality()
     orbit = 43000
-    pixnr = 450+7*1024
+    pixnr = 423+7*1024
 
     # print_nr_ppg(orbit)
-    #print_criteria30(orbit, pixnr)
-    #print_dark(orbit, pixnr)
-    #print_noise(orbit, pixnr)
+    print_criteria30(orbit, pixnr)
+    print_dark(orbit, pixnr)
+    print_noise(orbit, pixnr)
     print_vardark(orbit, pixnr)
     print_criteria32(orbit, pixnr)
     # compare_noise_30_vs_32(orbit)
     # compare_res_30_vs_32(orbit)
     # compare_error_30_vs_32(orbit)
     print_noise30(orbit, pixnr)
+    print_mean30(orbit, pixnr)
     compare_combined_30_vs_32(orbit)
     #print_30_vs_32_fit_quality(orbit)
 

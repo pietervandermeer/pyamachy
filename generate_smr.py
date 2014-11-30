@@ -31,12 +31,15 @@ import sys
 import argparse
 import os.path
 import warnings
-
 import numpy as np
 import numpy.ma as ma
 import h5py
+import ConfigParser
+
+from sciamachy_module import petcorr
 from scia_dark_functions import scia_dark_fun1
 from envisat import PhaseConverter
+import config32
 
 #-------------------------SECTION VERSION-----------------------------------
 _swVersion = {'major': 0,
@@ -51,6 +54,9 @@ _dbVersion = {'major': 0,
 
 #-------------------------SECTION ERROR CLASSES-----------------------------
 class dbError(Exception):
+    pass
+
+class calibrationError(Exception):
     pass
 
 class readSunInfo(Exception):
@@ -317,12 +323,32 @@ class SDMFextractSun:
         self.smr = None
         self.wvlen = None
 
+        #
+        # Parse config file
+        #
+        
+        fname = 'default3.2.cfg'
+        cfg_file = open(fname)
+        try:
+            self.cfg = config32.load(cfg_file)
+        except ConfigParser.NoOptionError, ex:
+            msg = "There was a missing option in the configuration file '"
+            logging.exception(msg+fname)
+            raise
+
+        #
+        # read cluster definition
+        #
+
         with h5py.File( sun_db, 'r' ) as fid:
             dset = fid['ClusDef']
             self.clusDef = dset[:]
 
+        return
+
     def selectOrbits(self, orbitRange):
         with h5py.File( self.sun_db, 'r' ) as fid:
+            print("sun_db", self.sun_db)
             grp = fid['State_%02d' % self.state_id]
             dset = grp['orbitList']
             orbitList = dset[:]
@@ -398,7 +424,7 @@ class SMRcalib:
      7. Radiance correction
      8. Combine scans to Sun Mean Reference (implied for option "db")
     '''
-    def __init__(self):
+    def __init__(self, darkVersion="sdmf31"):
         self.funclist = (
             'maskDead', 'coaddDivision', 'memoryEffect', 'nonLinearity', 
             'backGround', 'strayLight', 'fitParam', 'mirrorModel',
@@ -412,6 +438,23 @@ class SMRcalib:
                  self.fitParam, self.mirrorModel, 
                  self.radiance, self.combineSpectra))
             )
+
+        self.darkVersion = darkVersion
+
+        #
+        # Parse config file
+        #
+        
+        fname = 'default3.2.cfg'
+        cfg_file = open(fname)
+        try:
+            self.cfg = config32.load(cfg_file)
+        except ConfigParser.NoOptionError, ex:
+            msg = "There was a missing option in the configuration file '"
+            logging.exception(msg+fname)
+            raise
+
+        return
 
     def maskDead(self, smr, verbose=False):
         '''
@@ -460,8 +503,6 @@ class SMRcalib:
 
         smr.spectra = ma.masked_where( (smr.spectra / smr.coaddf) >= 65535.,
                                        smr.spectra, copy=False )
-        print(smr.spectra.shape)
-        print(smr.spectra.mask)
         if verbose:
             masked = smr.spectra.mask.sum()
             print( '* Info: masked %6.1f pixels/spectrum with saturated signal'
@@ -604,7 +645,7 @@ class SMRcalib:
 
         # make a copy to correct Epitaxx PET without modifying the SMR object
         pet = smr.pet.copy()
-        pet[5 * smr.channelSize:] -= 1.18125e-3
+        pet[5 * smr.channelSize:] -= petcorr
 
         #
         # read dark correction values
@@ -627,7 +668,8 @@ class SMRcalib:
         corrsimu = corr.copy()
         corrvar = corr.copy()
 
-        with h5py.File( '/SCIA/SDMF30/sdmf_simudark.h5', 'r' ) as fid:
+        # simudark, just for reference
+        with h5py.File( "/SCIA/SDMF31/BackUp/sdmf_simudark.h5", 'r' ) as fid:
             grp = fid['/ch8']
             dset = grp['orbitList']
             orbitList = dset[:]
@@ -650,58 +692,66 @@ class SMRcalib:
 
             indx = 7 * smr.channelSize + np.arange(smr.channelSize)
             corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
-            print("corrsimu")
 
-        with h5py.File( 'sdmf_vardark_short.h5', 'r' ) as fid:
-            dset = fid['orbitList']
-            orbitList = dset[:]
-            metaIndx = np.argmin(abs(orbitList - smr.absOrbit))
-            print("metaIndx=", metaIndx)
-            dset = fid['metaTable']
-            mtbl = dset[metaIndx]
-            phase_shift = mtbl['phaseShift']
-            phase_shift2 = mtbl['phaseShift2']
-            dset = fid['ao']
-            ao = dset[metaIndx,:]
-            dset = fid['lc']
-            lc = dset[metaIndx,:]
-            dset = fid['amp']
-            amp = dset[metaIndx,:]
-            dset = fid['trend']
-            trend = dset[metaIndx,:]
-            amp2 = mtbl['amp2']
-            jds = smr.mtbl['julianDay']
-            orbit_phase = phase_conv.get_phase(jds, eclipseMode=True)
-            #orbit_phase = smr.mtbl['orbitPhase']
-            n_exec = orbit_phase.size
-            #print("ao=",ao.shape)
-            #print("lc=",lc.shape)
-            #print("amp=",amp.shape)
-            #print("trend=",trend.shape)
+        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_long.h5', 'r' )
+        orbits_dc = fid_dc['dim_orbit'][:]
+        idx_dc_orb = np.argmin(abs(orbits_dc - smr.absOrbit))
+        ds_dc = fid_dc["varDark"] # vardark dataset
+        phase_sz = fid_dc["dim_phase"].size
 
-            x = orbit_phase, np.zeros(n_exec)+pet[7*1024], np.empty(n_exec)
-            for pixnr in range(1024):
-                p = ao[pixnr], lc[pixnr], amp[pixnr], trend[pixnr], phase_shift, amp2, phase_shift2
-                #print(p, x)
-                # orbit phases, pets, coadding factors (unused)
-                corrvar[pixnr+7*1024] = scia_dark_fun1(p, x)
-                print(corrvar[7*1024])
+        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_long.h5', 'r' )
+        orbits_ao = fid_ao['orbits'][:]
+        idx_ao_orb = np.argmin(abs(orbits_ao - smr.absOrbit))
+        ds_ao = fid_ao["aos"] # the analog offsets dataset
+
+        jds = smr.mtbl['julianDay']
+        orbit_phase, orbits = phase_conv.get_phase(jds, eclipseMode=True, getOrbits=True)
+        real_phase = (orbit_phase + orbits) % 1.
+        idx_phase = real_phase * phase_sz
+
+        #orbit_phase = smr.mtbl['orbitPhase']
+        n_exec = orbit_phase.size
+        # get/compute dark current in BU/s, TODO: interpolated (difference would be minimal)
+        dc = ds_dc[idx_dc_orb,idx_phase,:]
+        # get/compute analog offset in BU
+        ao = ds_ao[idx_ao_orb,:]
+        # put these guys in channel 8, where they belong
+        corrvar[7*1024:] = ao + dc*pet[7*1024:] 
 
         #print(smr.spectra.shape, corrvar.shape)
         specsimu = smr.spectra - corrsimu
         specvar = smr.spectra - corrvar           
+        specnorm = smr.spectra - corr
 
-        print(corrsimu[7*1024:8*1024], corrvar[7*1024:8*1024], corr[7*1024:8*1024])
+        #print(corrsimu[7*1024:8*1024], corrvar[7*1024:8*1024], corr[7*1024:8*1024])
         #print(smr.spectra[smr.numSpectra/2, 7*1024:8*1024])
 
-        smr.spectra -= corrvar
+        #
+        # just stick with the generic sdmf 3.1 dark correction for now.. 
+        # this saves some bad pixels, although the better pixels are probably 1 or 2 BU off.. 
+        # if that matters at all on 10000 BU is to be seen. 
+        #
 
-        plt.cla()
-        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
-        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
-        plt.scatter(np.arange(1024), specsimu[0, 7*1024:8*1024].flatten(), c='b')
-        plt.scatter(np.arange(1024), specvar[0, 7*1024:8*1024].flatten(), c='r')
-        plt.show()
+        if self.darkVersion == "sdmf31":
+            smr.spectra -= corr 
+        elif self.darkVersion == "vardark":
+            smr.spectra -= corrvar
+        elif self.darkVersion == "simudark":
+            smr.spectra -= corrsimu
+        else:
+            raise calibrationError("unknown dark version "+self.darkVersion)
+
+#        plt.cla()
+#        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
+#        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
+#        plt.plot(np.arange(1024), specsimu[10, 7*1024:8*1024].flatten(), 'bo', label='simudark 3.1')
+#        plt.plot(np.arange(1024), specvar[10, 7*1024:8*1024].flatten(), 'ro', label='vardark 3.2')
+#        plt.plot(np.arange(1024), specnorm[10, 7*1024:8*1024].flatten(), 'go', label='generic 3.1')
+#        # plt.plot(np.arange(1024), corrvar[7*1024:8*1024], 'ro', label='vardark 3.2')
+#        # plt.plot(np.arange(1024), corrsimu[7*1024:8*1024], 'bo', label='simudark 3.1')
+#        # plt.plot(np.arange(1024), corr[7*1024:8*1024], 'go', label='generic 3.1')
+#        plt.legend(loc='best')
+#        plt.show()
 
         #
         # masked invalid pixels
@@ -1038,17 +1088,19 @@ class SMRcalib:
 #-------------------------SECTION WRITE DATA--------------------------------
 class SMRdb:
     def __init__( self, args=None, db_name='./sdmf_smr.h5',
-                  truncate=False, calibration=None, verbose=False ):
+                  truncate=False, calibration=None, verbose=False, darkVersion="sdmf31" ):
         if args:
             self.db_name  = args.db_name
             self.calibration = args.calibration.copy()
             self.truncate = args.truncate
             self.verbose  = args.verbose
+            self.darkVersion = args.darkVersion
         else:
             self.db_name  = db_name
             self.calibration = calibration
             self.truncate = truncate
             self.verbose  = verbose
+            self.darkVersion = darkVersion
 
     def checkDataBase(self):
         with h5py.File( self.db_name, 'r' ) as fid:
@@ -1056,6 +1108,9 @@ class SMRdb:
             if fid.attrs['calibOptions'] != mystr:
                 print( 'Fatal:', 'incompatible calibration options' )
                 raise dbError('incompatible calibration options')
+            if fid.attrs['darkVersion'] != self.darkVersion:
+                print( 'Fatal:', 'incompatible dark version', fid.attrs['darkVersion'], "vs", self.darkVersion )
+                raise dbError('incompatible dark version')
             myversion = '%(major)d.%(minor)d' % _swVersion
             if fid.attrs['swVersion'].rsplit('.',1)[0] != myversion:
                 print( 'Fatal:', 'incompatible with _swVersion' )
@@ -1147,6 +1202,7 @@ class SMRdb:
             # create attributes in the HDF5 root
             mystr = ','.join(list(self.calibration.astype('str')))
             fid.attrs['calibOptions'] = mystr
+            fid.attrs['darkVersion'] = self.darkVersion
             fid.attrs['swVersion'] = \
                 '%(major)d.%(minor)d.%(revision)d' % _swVersion
             fid.attrs['dbVersion'] = \
@@ -1402,6 +1458,11 @@ def handleCmdParams():
         else:
             return v1
 
+    def parseDarkVersion(string):
+        if string not in ("sdmf31", "simudark", "vardark"):
+            raise ArgumentTypeError("unknown darkVersion "+string)
+        return string
+
     def parseChannelList( str ):
         msg1 = "'" + str + "' is not a range or number." \
             + " Expected forms like '1-5' or '2'."
@@ -1446,6 +1507,9 @@ def handleCmdParams():
                             help='destroy database and start a new one' )
     parser_db.add_argument( '-P', '--progressbar', action='store_true', 
                             default=False, help='display progress bar' )
+    parser_db.add_argument( '-d', '--darkVersion', default='sdmf31', 
+                            type=parseDarkVersion,
+            help='dark current correction "sdmf31", "vardark", or "simudark"' )
     parser_show = subparsers.add_parser( 'show',
                                          help='options to display SMR' )
     parser_show.add_argument( '--orbit', type=int, default=12005, 
@@ -1502,7 +1566,7 @@ if __name__ == '__main__':
         obj_fig = SMRshow(args)
 
         # create object with calibration routines
-        obj_cal = SMRcalib()
+        obj_cal = SMRcalib(darkVersion=args.darkVersion)
 
         # read data
         try:
@@ -1531,7 +1595,7 @@ if __name__ == '__main__':
     #
     if args.subparser_name == 'db':
         # create object with calibration routines
-        obj_cal = SMRcalib()
+        obj_cal = SMRcalib(darkVersion=args.darkVersion)
 
         # make sure we combine the Sun spectra
         indx = obj_cal.funclist.index('combineSpectra')
@@ -1557,6 +1621,8 @@ if __name__ == '__main__':
             p_todo = float(smr.orbitList.size)
             p_done = smr.orbitList.size - smr.metaIndx.size
             update_progress(p_done / p_todo)
+
+        i_orbit = 0
         while True:
             try:
                 smr.readData()
@@ -1569,8 +1635,13 @@ if __name__ == '__main__':
                     p_done = smr.orbitList.size - smr.metaIndx.size
                     update_progress(p_done / p_todo)
 
+                print("orbit ", smr.orbitList[i_orbit])
+
             except readSunInfo:
                 sys.exit(1)
             except:
                 print( "Unexpected error:", sys.exc_info()[0] )
                 raise
+
+            i_orbit += 1
+
