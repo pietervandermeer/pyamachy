@@ -1,5 +1,9 @@
 from __future__ import print_function, division
 
+"""
+Compares, prints and plots all kinds of data related to pixelmask, between SDMF v3.0 and v3.2.
+"""
+
 import numpy as np
 import h5py
 

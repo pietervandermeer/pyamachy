@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-#
+
+"""
+Computes channel 8 variable dark current signal in BU/s for specified orbit range. 
+Uses interpolated_monthlies.h5.
+"""
+
 from __future__ import print_function, division
 
 import numpy as np
@@ -306,26 +311,26 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 #    print("done.")
 
     #
-    # subtract interpolated analog offset to get thermal signal, and normalize by time
+    # subtract interpolated analog offset to get dark current, and normalize by time
     #
 
-    print("get thermal background signal..")
-    thermal_background = readouts
+    print("get dark current..")
+    dark_current = readouts
     i_orbit = 0
     m = 0
     for orbit in in_orblist[:]:
         aos = inter_aos[i_orbit,:] 
         n = np.sum(eorbits == orbit)
         if n > 0:
-            thermal_background[m:m+n,:] -= (np.matrix(aos).T * np.ones(n)).T
+            dark_current[m:m+n,:] -= (np.matrix(aos).T * np.ones(n)).T
         i_orbit += 1
         m += n
-    thermal_background /= np.matrix(pets).T * np.ones(n_pix)
+    dark_current /= np.matrix(pets).T * np.ones(n_pix)
     print("done.")
 
     if pixnr is not None:
         plot_x = ephases
-        plot_y = thermal_background[:,pixnr]
+        plot_y = dark_current[:,pixnr]
 
     #
     # determine trending point for each orbit (including the extended borders)
@@ -336,10 +341,10 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     i_orbit = 0
     avg_phi = 0.
     xt = np.array([trending_phase]) # trending_phase
-    lcs = np.ones(n_pix) * 5000 # initial guess for thermal background signal. 5000 BU/s is a good average
+    lcs = np.ones(n_pix) * 5000 # initial guess for dark current. 5000 BU/s is a good average
     orbrange = range(int(np.min(ephases)), int(np.max(ephases)))
     n_tpts = len(orbrange)
-    # TODO: put phi, orbit, y, err_lc, err_trend, uncertainties into dict.. otherwise stoo much of a hassle when sorting or filteringm
+    # TODO: put phi, orbit, y, err_lc, err_trend, uncertainties into dict.. otherwise too much of a hassle when sorting or filtering
     trending_phis = np.empty(n_tpts)
     trending_orbits = np.empty(n_tpts)
     trending_ys = np.empty([n_tpts, n_pix])
@@ -387,7 +392,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             idx = (ephases >= orbit) & (ephases < (orbit+1))
             datapoint_count[i_orbit] = idx.size
             local_phi = ephases[idx]
-            local_y = thermal_background[idx,:]
+            local_y = dark_current[idx,:]
             print("local_y=", local_y[:,pixnr])
             abs_dist1 = np.abs(local_phi - (trending_phase+orbit))
             idx1 = (np.argsort(abs_dist1))[0:6]
@@ -547,8 +552,7 @@ if __name__ == "__main__":
     # parse command line arguments
     #
 
-    parser = argparse.ArgumentParser(description=
-             'Computes channel 8 thermal background signal in BU/s for specified orbit range. Uses interpolated_monthlies.h5.')
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-o', '--output', dest='output_fname', type=str)
     parser.add_argument('--config', dest='config_file', type=file, 
                         default='default3.1.cfg')

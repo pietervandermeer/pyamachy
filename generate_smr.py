@@ -726,6 +726,18 @@ class SMRcalib:
         #print(corrsimu[7*1024:8*1024], corrvar[7*1024:8*1024], corr[7*1024:8*1024])
         #print(smr.spectra[smr.numSpectra/2, 7*1024:8*1024])
 
+        plt.cla()
+        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
+        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
+        plt.plot(np.arange(1024), specsimu[10, 7*1024:8*1024].flatten(), 'bo', label='simudark 3.1')
+        plt.plot(np.arange(1024), specvar[10, 7*1024:8*1024].flatten(), 'ro', label='vardark 3.2')
+        plt.plot(np.arange(1024), specnorm[10, 7*1024:8*1024].flatten(), 'go', label='generic 3.1')
+        # plt.plot(np.arange(1024), corrvar[7*1024:8*1024], 'ro', label='vardark 3.2')
+        # plt.plot(np.arange(1024), corrsimu[7*1024:8*1024], 'bo', label='simudark 3.1')
+        # plt.plot(np.arange(1024), corr[7*1024:8*1024], 'go', label='generic 3.1')
+        plt.legend(loc='best')
+        plt.show()
+
         #
         # just stick with the generic sdmf 3.1 dark correction for now.. 
         # this saves some bad pixels, although the better pixels are probably 1 or 2 BU off.. 
@@ -740,18 +752,6 @@ class SMRcalib:
             smr.spectra -= corrsimu
         else:
             raise calibrationError("unknown dark version "+self.darkVersion)
-
-#        plt.cla()
-#        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
-#        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
-#        plt.plot(np.arange(1024), specsimu[10, 7*1024:8*1024].flatten(), 'bo', label='simudark 3.1')
-#        plt.plot(np.arange(1024), specvar[10, 7*1024:8*1024].flatten(), 'ro', label='vardark 3.2')
-#        plt.plot(np.arange(1024), specnorm[10, 7*1024:8*1024].flatten(), 'go', label='generic 3.1')
-#        # plt.plot(np.arange(1024), corrvar[7*1024:8*1024], 'ro', label='vardark 3.2')
-#        # plt.plot(np.arange(1024), corrsimu[7*1024:8*1024], 'bo', label='simudark 3.1')
-#        # plt.plot(np.arange(1024), corr[7*1024:8*1024], 'go', label='generic 3.1')
-#        plt.legend(loc='best')
-#        plt.show()
 
         #
         # masked invalid pixels

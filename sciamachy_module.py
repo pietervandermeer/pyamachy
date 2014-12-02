@@ -287,10 +287,26 @@ class OrbitRangeError(Exception):
     def __str__(self):
         return repr(self.value)
 
+class PetNotFoundError(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
+
 # for given pet and absolute orbit number, return the the right dark state id
+# channel 8 only, of course. 
 def get_darkstateid(pet, orbit):
     orbit = int(orbit)
-    if orbit >= 1572 and orbit < 43362:
+    if orbit >= 1990 and orbit < 4151:
+        if pet == 2:
+            return 67
+        elif pet == 0.5:
+            return 63
+        elif pet == 0.0625:
+            return 46
+        else:
+            raise PetNotFoundError("pet "+str(pet)+" not present between orbits 1990 and 4151")
+    if orbit >= 4151 and orbit < 43362:
         if pet == 2:
             return 67
         elif pet == 1:
@@ -302,7 +318,7 @@ def get_darkstateid(pet, orbit):
         elif pet == 0.0625:
             return 46
         else:
-            raise PetNotFoundError("pet not present between orbits 1572 and 43362")
+            raise PetNotFoundError("pet "+str(pet)+" not present between orbits 4151 and 43362")
     elif orbit >= 43362 and orbit < 60000:
         if pet == 1:
             return 67
@@ -315,7 +331,7 @@ def get_darkstateid(pet, orbit):
         elif pet == 0.0625:
             return 46
         else:
-            raise PetNotFoundError("pet not present after orbit 43362")
+            raise PetNotFoundError("pet "+str(pet)+" not present after orbit 43362")
     else:
         # very early orbit?
         raise OrbitRangeError("orbit "+str(orbit)+" out of range")

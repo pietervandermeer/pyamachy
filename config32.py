@@ -53,6 +53,7 @@ def load(config_file):
     d['db_dir'] = parser.get('Global','masterdirectory')
     d['extract_fname'] = parser.get('Global','extract_file')
     d['dark_long_fname'] = parser.get('Global','dark_long_file')
+    d['dark_fname'] = parser.get('Global','dark_long_file')
     d['dark_short_fname'] = parser.get('Global','dark_short_file')
     d['pixelmask_fname'] = parser.get('Global','pixelmask_file')
     d['statedarkch6p_fname'] = parser.get('Global','statedarkch6p_file')

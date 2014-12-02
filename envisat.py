@@ -21,13 +21,21 @@
 Contains functionality related to ENVISAT satellite operations.
 """
 
-import numpy
+from __future__ import print_function, division
+
+import unittest
+import numpy.testing as nptst
+import numpy as np
 import time
 from datetime import date
 import ctypes as ct
 import re
 
+#-- variables ------------------------------------------------------------------
+
 last_orbit = 53200
+
+#-- functions ------------------------------------------------------------------
 
 def parseOrbitList(str):
     msg1 = "'" + str + "' is not a range or number." \
@@ -57,7 +65,7 @@ def convert_orbit_to_jd(orbit_list, pole_phase=None):
     n_entries = len(orbit_list)
 
     # combine orbit number and south pole phase, to real number 
-    real_orbits = numpy.array(orbit_list)
+    real_orbits = np.array(orbit_list)
     if pole_phase != None and len(pole_phase) == n_entries and n_entries > 0:
         real_orbits += pole_phase
 
@@ -70,7 +78,7 @@ def convert_orbit_to_jd(orbit_list, pole_phase=None):
 
     offset = date(2000,1,1)
     offset = (offset - date(1,1,1)).days
-    jds = numpy.where(real_orbits < orbit_change, old_jds, new_jds) + offset + 3 # +3 what the?
+    jds = np.where(real_orbits < orbit_change, old_jds, new_jds) + offset + 3 # +3 what the?
     return jds
 
 class PhaseConverter:
@@ -106,29 +114,53 @@ class PhaseConverter:
         the phases and an array or absolute orbit numbers
          
         """
-        if not isinstance(jds, numpy.ndarray):
-            jds = numpy.array(jds)
+        if not isinstance(jds, np.ndarray):
+            jds = np.array(jds)
 
         n_records = jds.size
         saa_flag = False;
         dummy_orbit = 0
         # prepare orbit phase output array for c
-        phases = numpy.zeros(n_records) # TODO: directly specify dtype=float64 or so?
-        phases = phases.astype(numpy.float32)
+        phases = np.zeros(n_records) # TODO: directly specify dtype=float64 or so?
+        phases = phases.astype(np.float32)
         phases_c = phases.ctypes.data_as(ct.POINTER(ct.c_float))
         # prepare julianday input array for c
-        jds = jds.astype(numpy.float64)
+        jds = jds.astype(np.float64)
         jds_c = jds.ctypes.data_as(ct.POINTER(ct.c_double))
 
-        # orbits = numpy.empty(n_records)
+        # orbits = np.empty(n_records)
         # orbits_c = orbits.ctypes.data_as(ct.POINTER(ct.c_long))
-        orbits = numpy.empty(n_records) # TODO: directly specify dtype=float64 or so?
-        orbits = orbits.astype(numpy.int32)
+        orbits = np.empty(n_records) # TODO: directly specify dtype=float64 or so?
+        orbits = orbits.astype(np.int32)
         orbits_c = orbits.ctypes.data_as(ct.POINTER(ct.c_long))
 
         if getOrbits:
             self.phaselib._GET_SCIA_ROE_ORBITPHASE_ORBIT(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), orbits_c, phases_c, jds_c) 
-            return numpy.float64(phases), orbits
+            return np.float64(phases), orbits
         else:
             self.phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
             return phases
+
+#-- unit tests -----------------------------------------------------------------
+
+class PhaseConverterTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.pc = PhaseConverter()
+        return
+
+    def test_fat1(self):
+        """ 
+        Just a randomly chosen factor acceptance test 
+        """
+        phases, orbits = self.pc.get_phase(np.array([1000.0,1000.1,1000.2,1000.3]), getOrbits=True)
+        expected_phases = np.array([0.10914163, -0.45960116, -0.02825826, -0.59700102], dtype=np.float32)
+        expected_orbits = [3004, 3006, 3007, 3009]
+        self.assertEqual(orbits.tolist(), expected_orbits)
+        nptst.assert_allclose(phases, expected_phases, rtol=1e-5) # this tolerance should be ok for float32
+        return
+
+#-- main -----------------------------------------------------------------------
+
+if __name__ == "__main__":
+    unittest.main()

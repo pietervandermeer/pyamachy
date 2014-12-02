@@ -624,73 +624,50 @@ class PixelQuality:
             # check if orbit already present..
             dset = f['orbits']
             idx = dset[:] == orbit
+            self.n_write = dset.size
             if np.sum(idx) > 0:
                 # replace
                 idx = np.where(idx)[0][0]
-                dset[idx] = orbit
-                dset = f['entryDate']
-                dset[idx] = nowstr
-                dset = f['combined']
-                dset[idx,:] = self.combined
-                dset = f['darkError']
-                dset[idx,:] = self.dc_err_figure
-                dset = f['darkResidual']
-                dset[idx,:] = self.residual_figure
-                dset = f['sunResponse']
-                dset[idx,:] = self.sun_reldev
-                dset = f['wlsResponse']
-                dset[idx,:] = self.wls_reldev
-                dset = f['noise']
-                dset[idx,:] = self.noise_figure
-                dset = f['invalid']
-                dset[idx,:] = self.invalid_mask
-                dset = f['combinedFlag']
-                dset[idx,:] = self.combined_flags
-                dset = f['saturation']
-                dset[idx,:] = self.darkcursat_figure
-                dset = f['chisquare3.0']
-                dset[idx,:] = self.chisquare30_figure
-
             else:
-                # append: resize and write.. orbits dataset first
-                self.n_write = dset.size + 1
-                dset.resize((self.n_write,))
-                dset[self.n_write-1] = orbit
+                # append: resize and write.. 
+                self.n_write += 1
+                idx = self.n_write-1
 
-                # now the other data sets
-                dset = f['entryDate']
-                dset.resize((self.n_write,))
-                dset[self.n_write-1] = nowstr
-                dset = f['combined']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.combined
-                dset = f['darkError']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.dc_err_figure
-                dset = f['darkResidual']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.residual_figure
-                dset = f['sunResponse']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.sun_reldev
-                dset = f['wlsResponse']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.wls_reldev
-                dset = f['noise']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.noise_figure
-                dset = f['invalid']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.invalid_mask
-                dset = f['combinedFlag']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.combined_flags
-                dset = f['saturation']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.darkcursat_figure
-                dset = f['chisquare3.0']
-                dset.resize((self.n_write, self.num_chanpixels))
-                dset[self.n_write-1,:] = self.chisquare30_figure
+            dset.resize((self.n_write,))
+            dset[idx] = orbit
+            dset = f['entryDate']
+            dset.resize((self.n_write,))
+            dset[idx] = nowstr
+            dset = f['combined']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.combined
+            dset = f['darkError']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.dc_err_figure
+            dset = f['darkResidual']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.residual_figure
+            dset = f['sunResponse']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.sun_reldev
+            dset = f['wlsResponse']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.wls_reldev
+            dset = f['noise']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.noise_figure
+            dset = f['invalid']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.invalid_mask
+            dset = f['combinedFlag']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.combined_flags
+            dset = f['saturation']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.darkcursat_figure
+            dset = f['chisquare3.0']
+            dset.resize((self.n_write, self.num_chanpixels))
+            dset[idx,:] = self.chisquare30_figure
 
             f.close()
         else:
@@ -896,11 +873,13 @@ class PixelQuality:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     print("Pixelmask unit test:")
-    p = PixelQuality(sdmf30_compat=True)
+    p = PixelQuality(sdmf30_compat=False)
     print("initialised.")
 
-    for orbit in range(30630,53200):
+    for orbit in range(28631,53200):
+#    for orbit in range(4151,53200):
 #    for orbit in range(42999,43001):
+#        p.calculate(orbit)
         try:
             p.calculate(orbit)
         except:

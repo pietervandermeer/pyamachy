@@ -1,3 +1,12 @@
+"""
+Interpolates vardark fit parameters between monthly orbits.
+This uses a monthly_fits*.h5 database as input.
+Interpolated parameters are generated and stored for every orbit.
+
+Note that it will also extrapolate beyond the first and last orbit when necessary.
+Take care that a partial monthly_fits database will be extrapolated over the entire mission.
+"""
+
 from __future__ import print_function, division
 
 import warnings
@@ -8,6 +17,7 @@ from scipy.interpolate import interp1d
 from scipy import array
 import h5py
 
+from envisat import parseOrbitList
 from sciamachy_module import orbitfilter
 from vardark_module import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
@@ -20,26 +30,6 @@ first_orbit = 5000
 last_orbit = 6000
 
 #-- functions ------------------------------------------------------------------
-
-def parseOrbitList(str):
-    msg1 = "'" + str + "' is not a range or number." \
-        + " Expected forms like '20000-25000' or '20000'."
-    msg2 = "'" + str + "' is not valid orbit number."
-
-    if str.lower() == 'all':
-        return None
-
-    m = re.match(r'(\d+)(?:-(\d+))?$', str)
-    if not m:
-        raise ArgumentTypeError( msg1 )
-    v1 = int(m.group(1))
-    if m.group(2):
-        v2 = int(m.group(2))
-        if v1 < 1 or v2 > 100000:
-            raise ArgumentTypeError( msg2 )
-        return (v1, v2)
-    else:
-        return v1
 
 # extrapolate outside of the original data range of the specified interpolator
 def extrap1d(interpolator):
@@ -120,8 +110,7 @@ if __name__ == "__main__":
     # parse command line arguments
     #
 
-    parser = argparse.ArgumentParser(description=
-             'interpolates vardark fit parameters between monthly orbits.')
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-i', '--input', dest='input_fname', type=str, default='monthly_fits_long.h5')
     parser.add_argument('-o', '--output', dest='output_fname', type=str, default='interpolated_monthlies_long.h5')
     parser.add_argument('--config', dest='config_file', type=file, 

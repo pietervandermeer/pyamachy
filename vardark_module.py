@@ -378,10 +378,13 @@ class AllDarks():
         """
         # concat all states
         for petje in self.petlist:
-            #print("PET=",petje)
-            stateid = get_darkstateid(petje, orbit_range[0]) # TODO: this could be on the border of two state definitions
+            orbit = orbit_range[0] # TODO: this could be on the border of two state definitions
+            # a bit hacky, but since we really do not have these orbits with 1.0s PET, it's best to just skip instead of some complicated exception handling 
+            if petje == 1.0 and orbit < 4151:
+                continue
+            stateid = get_darkstateid(petje, orbit)
+            #print("PET=",petje,"stateid=",stateid)
             jds_, readouts_, noise_, tdet_, pet_, coadd_ = read_ch8_darks(orbit_range, stateid)
-            #print(stateid, pet_)
             self.jds_ = numpy.concatenate((self.jds_, jds_))
             self.readouts_ = numpy.concatenate((self.readouts_, readouts_))
             self.noise_ = numpy.concatenate((self.noise_, noise_))
