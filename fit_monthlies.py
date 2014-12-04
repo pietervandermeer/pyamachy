@@ -17,7 +17,7 @@ from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 
 n_pix = n_chanpix
 pixnr = 597
-first_orbit = 5000
+first_orbit = 1990
 last_orbit = 55000
 
 #-- functions ------------------------------------------------------------------
@@ -37,7 +37,8 @@ def fit_monthlies(db_out_name, short=False):
     if short:
         ad = AllDarks([0.125, 0.06250])
     else:
-        ad = AllDarks([1.0, 0.5])
+        ad = AllDarks([1.0, 0.5, 0.125])
+        #ad = AllDarks([1.0, 0.5])
 
     # compute amount of monthlies
     n_monthlies = 0

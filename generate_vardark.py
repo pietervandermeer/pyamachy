@@ -207,7 +207,7 @@ class VarDarkdb:
     def close( self ):
         self.fid.close()
 
-def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None, useTrendFit=True):
+def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None, useTrendFit=True, short=False):
     """
     Generate vardark product for specified orbits and from specified input database.
 
@@ -226,8 +226,10 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         last orbit in orbit range
     pixnr : int, optional 
         [0..1023]. if not None will plot a pixel of choice instead of output data to database
-    useTrendFit : boolean, optional
+    useTrendFit : bool, optional
         flag that replaces simple trending procedure by fit (more accurate, but also more costly)
+    short : bool, optional
+        if set, compute short pet vardark
     """
 
     import logging
@@ -336,7 +338,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     # determine trending point for each orbit (including the extended borders)
     #
 
-    print("compute trends and lc offsets..")
+    print("compute trends and dark current offsets..")
     i_trend = 0
     i_orbit = 0
     avg_phi = 0.
@@ -589,13 +591,17 @@ if __name__ == "__main__":
     print("path=", path)
 
     if args.shortMode:
-        print("PETs [0.0625, 0.125]")
-        ad = AllDarks([0.0625, 0.125])
+        pets = [1.0, 0.5, 0.125]
+        #pets = [0.0625, 0.125]
+        print("PETs", pets)
+        ad = AllDarks(pets)
         dbname = path+"/vardark_short.h5"
         input_dbname = path+"/interpolated_monthlies_short.h5"
     else:
-        print("PETs [1.0, 0.5]")
-        ad = AllDarks([1.0, 0.5])
+        pets = [1.0, 0.5, 0.125]
+        #pets = [1.0, 0.5]
+        print("PETs", pets)
+        ad = AllDarks(pets)
         dbname = path+"/vardark_long.h5"
         input_dbname = path+"/interpolated_monthlies_long.h5"
     print("dbname=", dbname)
@@ -647,7 +653,8 @@ if __name__ == "__main__":
     # do the work
     #
 
-    generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=pixnr, useTrendFit=useTrendFit)
+    generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, 
+                     pixnr=pixnr, useTrendFit=useTrendFit, short=args.shortMode)
 
     #
     # close down the output database

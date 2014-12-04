@@ -20,7 +20,6 @@
 from __future__ import print_function, division
 
 import h5py
-import numpy
 import numpy as np
 from numpy import cos, pi
 from kapteyn import kmpfit
@@ -28,7 +27,7 @@ import matplotlib.pyplot as plt
 
 from ranges import remove_overlap, is_in_range, merge_ranges
 from envisat import PhaseConverter
-from sciamachy_module import NonlinCorrector, read_extracted_states, petcorr, orbitfilter, get_darkstateid, read_extracted_states_
+from sciamachy_module import petcorr, orbitfilter, get_darkstateid, read_extracted_states_, NonlinCorrector
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #-------------------------SECTION VERSION-----------------------------------
@@ -46,11 +45,9 @@ _dbVersion = {'major': 0,
 #- globals ---------------------------------------------------------------------
 
 # orbit phase at which trending point lies. eclipse phase definition
-trending_phase = 0.12 # orb < 43362
-#trending_phase = 0.35
+trending_phase = 0.12
 
 nlc = NonlinCorrector()
-phaseconv = PhaseConverter()
 fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
 
@@ -64,15 +61,27 @@ def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
 
-# fit dark model to two neighbouring monthly calibration orbits
-#def fit_monthly(orbit, shortFlag=False, longFlag=True):
-def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
+def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=None, short=False, **kwargs):
+    """
+    fit dark model to two neighbouring monthly calibration orbits
+
+    Parameters
+    ----------
+
+    alldarks : AllDarks object
+        used to get underlying dark states from sdmf database in an easy and unambiguous way
+    orbit : int
+        absolute orbit number
+    verbose : bool, optional
+        if set, provide verbose output
+    kappasigma : bool, optional
+        if set, use kappasigma filter 
+    """
 
     orbit_range = orbit-.5, orbit+2.5
     if verbose:
         print(orbit_range)
 
-    #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     #
@@ -85,47 +94,74 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
         print(pet)
         print(coadd)
     
+    # small pets should not be taken veryseriously, unless specified or the rest is saturated..
+    if not short:
+        idx = pet < .49
+        if np.sum(idx) > 0:
+            idx = np.where(idx)[0]
+            all_sigmas[idx,:] *= 50
+
     aoinfo = dict(fixed=False, limits=[0,10000])
-    lcinfo = dict(fixed=False, limits=[-100000.,+100000.])
+    dcinfo = dict(fixed=False, limits=[-10000.,+500000.])
     amp1info = dict(fixed=False, limits=[-1000,+1000])
     trendinfo = dict(fixed=False, limits=[-1000,+1000])
     amp2info = dict(fixed=False, limits=[-1.,+1.])
     phase1info = dict(fixed=False, limits=[-3.,+3.])
     phase2info = dict(fixed=False, limits=[-3.,+3.])
-#    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info] 
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]
+    parinfo = [aoinfo,dcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]
 
     # prepare initial parameters
-    ao0 = 4000
+    ao0 = 3000
     dc0 = 4000
     amp1_0 = 10
     trend0 = 0
     amp2_0 = 0.1
     phase_offset1 = 0
     phase_offset2 = 0
-    #p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1])
-    p0 = numpy.array([ao0, dc0, amp1_0, trend0, phase_offset1, amp2_0, phase_offset2])
+    p0 = np.array([ao0, dc0, amp1_0, trend0, phase_offset1, amp2_0, phase_offset2])
 
     # ..and fit
     n_done = 0
-    statuses = numpy.zeros(n_pix)
-    res_phases = numpy.zeros(n_pix)
-    res_phases2 = numpy.zeros(n_pix)
+    statuses = np.zeros(n_pix)
+    res_phases = np.zeros(n_pix)
+    res_phases2 = np.zeros(n_pix)
     for pixnr in range(n_pix):
-        #print(pixnr)
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        #print('readouts = ', pix_readouts)
-        #print('sigmas = ', pix_sigmas)
-        #print(numpy.sum(pix_sigmas))
-        if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
-#            fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
-            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+        if not np.isnan(np.sum(pix_readouts)):
+            # pass a
+            idx = pix_sigmas == 0
+            if np.sum(idx) > 0:
+                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+            residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+            dev_residual = np.std(residual)
+            avg_residual = np.mean(residual)
+
+            if kappasigma:
+                # pass b : coarse kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 10.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+                dev_residual = np.std(residual)
+                avg_residual = np.mean(residual)
+
+                # pass c : finer kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 5.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+                dev_residual = np.std(residual)
+                avg_residual = np.mean(residual)
+
             n_done += 1
         else:
             continue
         if verbose:
-            print(pixnr, fitobj.params[4] % 1, fitobj.message)
+            print(pixnr, dev_residual, fitobj.params[4] % 1, fitobj.message)
         statuses[pixnr] = fitobj.status
         res_phases[pixnr] = fitobj.params[4]
         res_phases2[pixnr] = fitobj.params[6]
@@ -139,14 +175,13 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
     idx_neg = res_phases2 > 0.5
     res_phases2[idx_neg] -= 0.5
     # compute channel phase shift
-    channel_phase1 = numpy.median(res_phases[numpy.where(statuses > 0)] ) % 1
-    channel_phase2 = numpy.median(res_phases2[numpy.where(statuses > 0)] ) % 1
+    channel_phase1 = np.median(res_phases[np.where(statuses > 0)] ) % 1
+    channel_phase2 = np.median(res_phases2[np.where(statuses > 0)] ) % 1
     if verbose:
         print('channel median phase =', channel_phase1, channel_phase2)
     phase1info = dict(fixed=True, limits=[-3.,+3.])
     phase2info = dict(fixed=True, limits=[-3.,+3.])
-    #parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info]
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]  
+    parinfo = [aoinfo,dcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]  
     p0[4] = channel_phase1
     p0[6] = channel_phase2
 
@@ -154,26 +189,44 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
     # pass 2 - fix phase shift
     #
 
-    aos = numpy.zeros(n_pix)
-    lcs = numpy.zeros(n_pix)
-    amps = numpy.zeros(n_pix)
-    amps2 = numpy.zeros(n_pix)
-    trends = numpy.zeros(n_pix)
-    statuses = numpy.zeros(n_pix)
+    aos = np.zeros(n_pix)
+    lcs = np.zeros(n_pix)
+    amps = np.zeros(n_pix)
+    amps2 = np.zeros(n_pix)
+    trends = np.zeros(n_pix)
+    statuses = np.zeros(n_pix)
     for pixnr in range(n_pix):
-        #print(pixnr)
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        #print('readouts = ', pix_readouts)
-        #print('sigmas = ', pix_sigmas)
-        #print(numpy.sum(pix_sigmas))
-        if not numpy.isnan(numpy.sum(pix_readouts)) and numpy.all(pix_sigmas != 0):
-            #fitobj = kmpfit.simplefit(scia_dark_fun1, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
-            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+        if not np.isnan(np.sum(pix_readouts)): #  and np.all(pix_sigmas != 0)
+            # pass a
+            idx = pix_sigmas == 0
+            if np.sum(idx) > 0:
+                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+            residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+            dev_residual = np.std(residual)
+            avg_residual = np.mean(residual)
+
+            if kappasigma:
+                # pass b : coarse kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 10.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+                dev_residual = np.std(residual)
+                avg_residual = np.mean(residual)
+
+                # pass c : finer kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 5.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+
             n_done += 1
         else:
             continue
-        #fitobj.fit(params0=p0)
         if verbose:
             print(pixnr, fitobj.message)
         statuses[pixnr] = fitobj.status
@@ -186,20 +239,23 @@ def fit_monthly(alldarks, orbit, verbose=False, **kwargs):
            print('Error message = ', fitobj.message)
            quit()
 
-    channel_amp2 = numpy.median(amps2[numpy.where(statuses > 0)])
+    channel_amp2 = np.median(amps2[np.where(statuses > 0)])
 
-    # TODO: initial outlier removal pass?
-
-    #plt.cla()
-    #plt.scatter(all_state_phases, all_readouts[:,pixnr])
-    #plt.show()
-
-    # TODO: return refinement parameters as well.
+    if debug_pixnr is not None:
+        import matplotlib.pyplot as plt
+        plt.cla()
+        p = aos[debug_pixnr], lcs[debug_pixnr], amps[debug_pixnr], trends[debug_pixnr], channel_phase1, amps2[debug_pixnr], channel_phase2
+        model = scia_dark_fun2(p,x)
+        print("model=", model)
+        plt.plot(ephases-orbit, all_readouts[:,debug_pixnr], 'bo', label="data")
+        plt.plot(ephases-orbit, model, 'go', label="model")
+        plt.legend(loc="best")
+        plt.show()
 
     return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
 
 def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, 
-                      give_errors=False, verbose=False, **kwargs):
+                      give_errors=False, verbose=False, short=False, **kwargs):
     """
     fit dark model to an orbits with normal (eclipse) dark states
     use parameters computed from nearest calibration orbits
@@ -234,7 +290,6 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     # 
 
     orbit_range = orbit, orbit+2
-    #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     if ephases.size <= 2:
@@ -246,36 +301,43 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
 
     x = ephases-orbit, pet #, coadd
 
+    # small pets should not be taken veryseriously, unless specified or the rest is saturated..
+    if not short:
+        idx = pet < .49
+        if np.sum(idx) > 0:
+            idx = np.where(idx)[0]
+            all_sigmas[idx,:] *= 50
+
     #
     # setup attributes of fit parameters
     #
 
     # note the limits are just slightly wider than in the monthly fit. we do this to get rid of float32->float64 conversion errors!
-    aoinfo = dict(fixed=True, limits=[-0.1,10000.1])
-    lcinfo = dict(fixed=False, limits=[-100000.1,+100000.1])
+    aoinfo = dict(fixed=True, limits=[-0.1,11000.1])
+    dcinfo = dict(fixed=False, limits=[-10000.1,+500000.1])
     amp1info = dict(fixed=True, limits=[-1000.1,+1000.1])
     trendinfo = dict(fixed=False, limits=[-1000.1,+1000.1])
     amp2info = dict(fixed=True, limits=[-1.01,+1.01])
     phase1info = dict(fixed=True, limits=[-3.01,+3.01])
     phase2info = dict(fixed=True, limits=[-3.01,+3.01])
-    parinfo = [aoinfo,lcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
+    parinfo = [aoinfo,dcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
 
     #
     # setup result data arrays
     #
 
     n_done = 0
-    statuses = numpy.zeros(n_pix)
-    res_trends = numpy.empty(n_pix)
-    res_lcs = numpy.empty(n_pix)
-    res_trends[:] = numpy.nan
-    res_lcs[:] = numpy.nan
-    err_trends = numpy.empty(n_pix)
-    err_lcs = numpy.empty(n_pix)
-    err_trends[:] = numpy.nan
-    err_lcs[:] = numpy.nan
-    uncertainty = numpy.empty(n_pix)
-    uncertainty[:] = numpy.nan
+    statuses = np.zeros(n_pix)
+    res_trends = np.empty(n_pix)
+    res_lcs = np.empty(n_pix)
+    res_trends[:] = np.nan
+    res_lcs[:] = np.nan
+    err_trends = np.empty(n_pix)
+    err_lcs = np.empty(n_pix)
+    err_trends[:] = np.nan
+    err_lcs[:] = np.nan
+    uncertainty = np.empty(n_pix)
+    uncertainty[:] = np.nan
 
     #
     # ..and fit
@@ -283,11 +345,14 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
 
     for pixnr in range(n_pix):
         # prepare initial parameters.. 
-        p0 = numpy.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
+        p0 = np.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if (aos[pixnr] is not 0) and (not numpy.isnan(numpy.sum(pix_readouts))) and (numpy.all(pix_sigmas != 0)) and (x[0].size > 0):
+        if (aos[pixnr] is not 0) and (not np.isnan(np.sum(pix_readouts))) and (x[0].size > 0):
             #print(orbit, pixnr, p0, parinfo)
+            idx = pix_sigmas == 0
+            if np.sum(idx) > 0:
+                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             n_done += 1
         else:
@@ -303,8 +368,6 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         res_trends[pixnr] = fitobj.params[3]
         err_trends[pixnr] = fitobj.stderr[3]
         uncertainty[pixnr] = np.std(scia_dark_fun2(fitobj.params, x) - pix_readouts)
-        #else:
-        #   print("Optimal parameters: ", fitobj.params)
 
     if give_errors:
         return x, res_lcs, res_trends, err_lcs, err_trends, all_readouts, all_sigmas, uncertainty
@@ -320,9 +383,9 @@ def read_ch8_darks(orbit_range, stateid):
     n_exec = readouts.shape[0]
     for idx_exec in range(n_exec):
         readouts[idx_exec,:] = nlc.correct_ch8(readouts[idx_exec,:])
-    pet = numpy.zeros(n_exec) + states['pet'][0]
-    coadd = numpy.zeros(n_exec) + states['coadd'][0]
-    noise = noise / numpy.sqrt(coadd[0])
+    pet = np.zeros(n_exec) + states['pet'][0]
+    coadd = np.zeros(n_exec) + states['coadd'][0]
+    noise = noise / np.sqrt(coadd[0])
     phases = state_mtbl['orbitPhase'][:]
     tdet = state_mtbl['detectorTemp'][:]
     tdet = tdet[:,7].flatten() # ch8
@@ -344,26 +407,25 @@ class AllDarks():
             PETs of the dark states
         """
         self.petlist = petlist
-        self.jds_ = numpy.array([])
-        self.jds_ = numpy.array([])
-        self.readouts_ = numpy.empty([0, n_pix])
-        self.noise_ = numpy.empty([0, n_pix])
-        self.tdet_ = numpy.array([])
-        self.pet_ = numpy.array([])
-        self.coadd_ = numpy.array([])
-        self.ephases = numpy.array([])
+        self.jds_ = np.array([])
+        self.jds_ = np.array([])
+        self.readouts_ = np.empty([0, n_pix])
+        self.noise_ = np.empty([0, n_pix])
+        self.tdet_ = np.array([])
+        self.pet_ = np.array([])
+        self.coadd_ = np.array([])
+        self.ephases = np.array([])
         self.range_list = []
+        self.pc = PhaseConverter()
+        return
 
     def _register_range(self, orbit_range):
         """
         register orbit range and automatically remove overlap
         """
         self.range_list.append((orbit_range[0], orbit_range[1])) # make sure we're entering tuples into the list!
-        #print("post append:", self.range_list)
         self.range_list = remove_overlap(self.range_list)
-        #print("post remove_overlap:", self.range_list)
         self.range_list = merge_ranges(self.range_list)
-        #print("post merge:", self.range_list)
         return
 
     def is_registered(self, orbit_range):
@@ -380,17 +442,16 @@ class AllDarks():
         for petje in self.petlist:
             orbit = orbit_range[0] # TODO: this could be on the border of two state definitions
             # a bit hacky, but since we really do not have these orbits with 1.0s PET, it's best to just skip instead of some complicated exception handling 
-            if petje == 1.0 and orbit < 4151:
+            if ((petje == 1.0) or (petje == 0.125)) and (orbit < 4151):
                 continue
             stateid = get_darkstateid(petje, orbit)
-            #print("PET=",petje,"stateid=",stateid)
             jds_, readouts_, noise_, tdet_, pet_, coadd_ = read_ch8_darks(orbit_range, stateid)
-            self.jds_ = numpy.concatenate((self.jds_, jds_))
-            self.readouts_ = numpy.concatenate((self.readouts_, readouts_))
-            self.noise_ = numpy.concatenate((self.noise_, noise_))
-            self.tdet_ = numpy.concatenate((self.tdet_, tdet_))
-            self.pet_ = numpy.concatenate((self.pet_, pet_))
-            self.coadd_ = numpy.concatenate((self.coadd_, coadd_))
+            self.jds_ = np.concatenate((self.jds_, jds_))
+            self.readouts_ = np.concatenate((self.readouts_, readouts_))
+            self.noise_ = np.concatenate((self.noise_, noise_))
+            self.tdet_ = np.concatenate((self.tdet_, tdet_))
+            self.pet_ = np.concatenate((self.pet_, pet_))
+            self.coadd_ = np.concatenate((self.coadd_, coadd_))
 
         return
 
@@ -422,7 +483,7 @@ class AllDarks():
         """
 
         # deduplicate after having lumped
-        self.jds_, idx = numpy.unique(self.jds_, return_index=True)
+        self.jds_, idx = np.unique(self.jds_, return_index=True)
         self.readouts_ = self.readouts_[idx,:]
         self.noise_ = self.noise_[idx,:]
         self.tdet_ = self.tdet_[idx]
@@ -430,11 +491,11 @@ class AllDarks():
         self.coadd_ = self.coadd_[idx]
 
         # get eclipse phases + orbits
-        ephases, orbits = phaseconv.get_phase(self.jds_, getOrbits=True)
+        ephases, orbits = self.pc.get_phase(self.jds_, getOrbits=True)
         ephases += orbits
 
         # filter out sunrise-affected data
-        ephases1 = numpy.mod(ephases, 1.)
+        ephases1 = np.mod(ephases, 1.)
         idx_nosunrise = (ephases1 < .35) | (ephases1 > .42)
         self.jds = self.jds_[idx_nosunrise]
         self.ephases = ephases[idx_nosunrise]
@@ -464,12 +525,9 @@ class AllDarks():
             if first_orbit < 43362 and last_orbit >= 43362:
                 print("lump upto 43361")
                 self._lumpl([first_orbit, 43361])
-                #print("LO???",self.range_list)
                 print("lump from 43362")
                 self._lumpr([43362, last_orbit])
-                #print("HI???",self.range_list)
             else:
-                #print("buffer_range(): lumplr", orbit_range)
                 self._lumplr(orbit_range)
             self._finalize()
 
@@ -490,304 +548,7 @@ class AllDarks():
         if autoLump:
             self.buffer_range(orbit_range)
         idx = (self.ephases.astype('i') >= orbit_range[0]) & (self.ephases.astype('i') <= orbit_range[1])
-        return numpy.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
-
-# compute thermal background trend between two normal orbits 
-# also computes actual thermal background offset (excluding trend or oscillation)
-def compute_trend(alldarks, orbit, aos, amps, amp2, phaseshift, phaseshift2, **kwargs):
-
-    orbit_range = orbit-.5, orbit+2.5
-    #print(orbit_range)
-
-    trends = numpy.empty(n_pix)
-    trends[:] = numpy.nan
-    lcs = numpy.empty(n_pix)
-    lcs[:] = numpy.nan
-
-    #n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = extract_dark_states(orbit, **kwargs)
-    n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
-    print(n_exec)
-    if n_exec == 0:
-        #return numpy.zeros(n_pix), numpy.zeros(n_pix)
-        return trends, lcs
-
-    #print(ephases)
-    #print(pet)
-    # divide by coadding factor, subtract analog offset and divide by exposure time to get thermal background in BU/s
-    thermal_background = all_readouts
-    #thermal_background /= numpy.matrix(coadd).T * numpy.ones(n_pix) # this was already done.. 
-    thermal_background -= (numpy.matrix(aos).T * numpy.ones(n_exec)).T
-    thermal_background /= numpy.matrix(pet).T * numpy.ones(n_pix)
-
-    abs_dist1 = numpy.abs(ephases - (trending_phase+orbit))
-    abs_dist2 = numpy.abs(ephases - (trending_phase+orbit+1))
-    idx1 = (numpy.argsort(abs_dist1))[0:6]
-    idx2 = (numpy.argsort(abs_dist2))[0:6]
-    #print(idx2)
-    phi1 = numpy.mean(ephases[idx1])
-    phi2 = numpy.mean(ephases[idx2])
-    #print(phi1,phi2)
-    idx0 = numpy.argmin(ephases)
-    phi0 = ephases[idx0]
-    phi1_ = phi1 % 1
-
-    # loop over all channel pixels
-    for pixnr in range(n_pix):
-        if aos[pixnr] is 0:
-            continue
-        if numpy.all(all_sigmas[:,pixnr] is 0):
-            continue 
-        background = thermal_background[:,pixnr]
-        if numpy.isnan(numpy.sum(background)):
-            continue 
-
-        avg1 = numpy.mean(background[idx1])
-        avg2 = numpy.mean(background[idx2])
-        trends[pixnr] = (avg2-avg1)/(phi2-phi1)
-        lcs[pixnr] = avg1 - trends[pixnr]*phi1_ - amps[pixnr]*( cos(2*pi*(phi1_+phaseshift)) + amp2*cos(4*pi*(phi1_+phaseshift2)) )
-#        lcs[pixnr] = avg1 - trends[pixnr]*phi1_ - amps[pixnr]*( cos(2*pi*(phi1_+phaseshift)) + amp2*cos(4*pi*(phi1_+phaseshift2)) )
-
-    return trends, lcs
-
-# TODO: OUTDATED.. replaced with another class of the same name. up for removal
-class VarDark:
-    def __init__(self, orbit,ao, lc, amp, trend, phaseshift, amp2, phaseshift2):
-        self.numPixels = 1024
-        self.absOrbit = orbit
-        self.ao = ao
-        self.lc = lc
-        self.amp = amp
-        self.trend = trend
-        self.phaseshift = phaseshift
-        self.amp2 = amp2
-        self.mtbl = dict()
-        self.mtbl['julianDay'] = 1.234 # TODO convert orbit to JD
-        self.mtbl['phaseShift2'] = phaseshift2
-        self.mtbl['amp2'] = amp2
-        self.mtbl['obmTemp'] = 999 # TODO
-        self.mtbl['detTemp'] = numpy.array([999,999,999,999,999,999,999,999]) # TODO
-
-class VarDarkDb:
-    def __init__( self, args=None, db_name='./sdmf_vardark.h5',
-                  truncate=False, calibration=None, verbose=False, allDarks=None ):
-        self.monthly_orbit = -1
-        self.created = False
-        self.ofilt = orbitfilter()
-        # initialize a minimal version
-        self.alldarks = AllDarks([0.5, 1.0])
-
-        if args:
-            self.db_name  = args.db_name
-            self.calibration = args.calibration.copy()
-            self.truncate = args.truncate
-            self.verbose  = args.verbose
-        else:
-            self.db_name  = db_name
-            self.calibration = calibration
-            self.truncate = truncate
-            self.verbose  = verbose
-        return
-
-    def checkDataBase(self):
-        with h5py.File( self.db_name, 'r' ) as fid:
-            mystr = ','.join(list(self.calibration.astype('str')))
-            if fid.attrs['calibOptions'] != mystr:
-                print( 'Fatal:', 'incompatible calibration options' )
-                raise dbError('incompatible calibration options')
-            myversion = '%(major)d.%(minor)d' % _swVersion
-            if fid.attrs['swVersion'].rsplit('.',1)[0] != myversion:
-                print( 'Fatal:', 'incompatible with _swVersion' )
-                raise dbError('incompatible with _swVersion')
-            myversion = '%(major)d.%(minor)d' % _dbVersion
-            if fid.attrs['dbVersion'].rsplit('.',1)[0] != myversion:
-                print( 'Fatal:', 'incompatible with _dbVersion' )
-                raise dbError('incompatible with _dbVersion')
-            myversion = '%(major)d.%(minor)d' % _calibVersion
-            if fid.attrs['calibVersion'].rsplit('.',1)[0] != myversion:
-                print( 'Fatal:', 'incompatible with _calibVersion' )
-                raise dbError('incompatible with _calibVersion')
-
-    def fill_mtbl(self, vardark):
-        from datetime import datetime 
-
-        fmtMTBL  = 'float64,a20,uint16,uint16,float32,float32,float32,float32,8float32'
-        nameMTBL = ('julianDay','entryDate','absOrbit','quality','phaseShift','phaseShift2','amp2','obmTemp','detTemp')
-
-        self.mtbl = np.empty(1, dtype=fmtMTBL )
-        self.mtbl.dtype.names = nameMTBL
-        self.mtbl['julianDay'] = vardark.mtbl['julianDay']
-        self.mtbl['entryDate'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.mtbl['absOrbit'] = vardark.absOrbit
-        self.mtbl['quality'] = 0
-        self.mtbl['phaseShift'] = vardark.phaseshift
-        self.mtbl['obmTemp'] = vardark.mtbl['obmTemp']
-        self.mtbl['detTemp'] = vardark.mtbl['detTemp']
-        self.mtbl['phaseShift2'] = vardark.mtbl['phaseShift2']
-        self.mtbl['amp2'] = vardark.mtbl['amp2']
-
-    def create(self, vardark):
-        with h5py.File( self.db_name, 'w', libver='latest' ) as fid:
-            n_pix = vardark.numPixels
-            if isinstance(vardark.absOrbit, numpy.ndarray):
-                reshaped_orbits = vardark.absOrbit.reshape(1,)
-            else:
-                reshaped_orbits = numpy.array([vardark.absOrbit])
-            ds = fid.create_dataset( 'orbitList', dtype='uint16',
-                                     data=reshaped_orbits, 
-                                     maxshape=(None,), chunks=(512,) )
-            ds = fid.create_dataset( 'metaTable', 
-                                     data=self.mtbl,
-                                     chunks=(16384 // self.mtbl.dtype.itemsize,),
-                                     shuffle=True, compression='gzip',
-                                     compression_opts=1, maxshape=(None,) )
-            ds = fid.create_dataset( 'ao', 
-                                     data=vardark.ao.reshape(1,n_pix), 
-                                     maxshape=(None,n_pix), 
-                                     chunks=(8,n_pix), 
-                                     compression='gzip', compression_opts=1,
-                                     shuffle=True )
-            ds = fid.create_dataset( 'lc', 
-                                     data=vardark.lc.reshape(1,n_pix), 
-                                     maxshape=(None,n_pix), 
-                                     chunks=(8,n_pix), 
-                                     compression='gzip', compression_opts=1,
-                                     shuffle=True )
-            ds = fid.create_dataset( 'amp', 
-                                     data=vardark.amp.reshape(1,n_pix), 
-                                     maxshape=(None,n_pix), 
-                                     chunks=(8,n_pix), 
-                                     compression='gzip', compression_opts=1,
-                                     shuffle=True )
-            ds = fid.create_dataset( 'trend', 
-                                     data=vardark.trend.reshape(1,n_pix), 
-                                     maxshape=(None,n_pix), 
-                                     chunks=(8,n_pix), 
-                                     compression='gzip', compression_opts=1,
-                                     shuffle=True )
-
-            # create attributes in the HDF5 root
-            if self.calibration is not None:
-                mystr = ','.join(list(self.calibration.astype('str')))
-                fid.attrs['calibOptions'] = mystr
-            fid.attrs['swVersion'] = \
-                '%(major)d.%(minor)d.%(revision)d' % _swVersion
-            fid.attrs['dbVersion'] = \
-                '%(major)d.%(minor)d.%(revision)d' % _dbVersion
-            fid.attrs['calibVersion'] = \
-                '%(major)d.%(minor)d.%(revision)d' % _calibVersion
-
-            self.created = True
-
-    def append(self, vardark):
-        with h5py.File( self.db_name, 'r+' ) as fid:
-            dset = fid['orbitList']         # orbitList
-            ax1 = dset.len()
-            dset.resize(ax1+1, axis=0)
-            dset[ax1] = vardark.absOrbit
-            orbitList = dset[:]
-            dset = fid['metaTable']         # metaTable
-            dset.resize(ax1+1, axis=0)
-            dset[ax1] = self.mtbl
-            dset = fid['ao']               # analog offset
-            dset.resize(ax1+1, axis=0)
-            dset[ax1,:] = vardark.ao.reshape(1,n_pix)
-            dset = fid['lc']       # leakage current (constant part of thermal background in BU/s)
-            dset.resize(ax1+1, axis=0)
-            dset[ax1,:] = vardark.lc.reshape(1,n_pix)
-            dset = fid['amp']       # orbital variation amplitude
-            dset.resize(ax1+1, axis=0)
-            dset[ax1,:] = vardark.amp.reshape(1,n_pix)
-            dset = fid['trend']          # orbit-to-orbit trend (slope)
-            dset.resize(ax1+1, axis=0)
-            dset[ax1,:] = vardark.trend.reshape(1,n_pix)
-
-    def rewrite(self, vardark):
-        with h5py.File( self.db_name, 'r+' ) as fid:
-            dset = fid['orbitList']         # orbitList
-            orbitList = dset[:]
-            ax1 = np.nonzero(orbitList == vardark.absOrbit)[0][0]
-            dset = fid['metaTable']         # metaTable
-            dset[ax1] = self.mtbl
-            dset = fid['ao']               # analog offset
-            dset[ax1,:] = vardark.lc.reshape(1,n_pix)
-            dset = fid['lc']       # leakage current (constant part of thermal background in BU/s)
-            dset[ax1,:] = vardark.ao.reshape(1,n_pix)
-            dset = fid['amp']       # orbital variation amplitude
-            dset[ax1,:] = vardark.amp.reshape(1,n_pix)
-            dset = fid['trend']          # orbit-to-orbit trend (slope)
-            dset[ax1,:] = vardark.trend.reshape(1,n_pix)
-
-    def store(self, vardark, verbose=False):
-        self.fill_mtbl( vardark )
-        if not h5py.is_hdf5( self.db_name ):
-            if verbose: print( '* Info: create new database' )
-            self.create( vardark )
-        elif self.truncate: 
-            if verbose: print( '* Info: replace database (and start a new)' )
-            self.create( vardark )
-        else:
-            self.checkDataBase()
-            with h5py.File( self.db_name, 'r' ) as fid:
-                dset = fid['orbitList']
-                orbitList = dset[:]
-
-            if np.nonzero(orbitList == vardark.absOrbit)[0].size == 0:
-                if verbose: print( '* Info: append new SMR to database' )
-                self.append( vardark )
-            else:
-                if verbose: print( '* Info: overwrite entry in database' )
-                self.rewrite( vardark )
-
-    def calc_and_store_orbit(self, orbit, verbose=False, **kwargs):
-        normal_orbit = orbit
-        monthly_orbit = self.ofilt.get_closest_monthly(orbit)
-        if self.monthly_orbit != monthly_orbit:
-            # calculate if monthly if not buffered
-            channel_phase, channel_phase2, aos, lcs, amps, amp2, trends = fit_monthly(self.alldarks, monthly_orbit, **kwargs)
-            self.monthly_orbit = monthly_orbit
-            self.aos = aos
-            self.lcs = lcs
-            self.amps = amps
-            self.amp2 = amp2
-            self.trends = trends
-            self.channel_phase = channel_phase 
-            self.channel_phase2 = channel_phase2
-        else:
-            # just use the buffered version
-            aos = self.aos
-            lcs = self.lcs
-            amps = self.amps
-            trends = self.trends
-            channel_phase = self.channel_phase
-            amp2 = self.amp2
-            channel_phase2 = self.channel_phase2
-
-        if verbose:
-            print('channel_phase=', channel_phase)
-            print('channel_phase2=', channel_phase2)
-            print('aos=', aos)
-            print('lc=', lcs)
-            print('amp=', amps)
-            print('amp2=', amp2)
-            print('trend=', trends)
-
-        # fit constant part of lc and trend
-        #x, lcs_fit, trends_fit, readouts, sigmas = fit_eclipse_orbit(normal_orbit, aos, lcs, amps, channel_phase, shortFlag=use_short_states, longFlag=use_long_states)
-        #trends_fit = numpy.zeros(n_pix) # just to illustrate difference
-
-        # directly compute constant part of lc and trend for averaged eclipse data points
-        trends_lin, lcs_lin = compute_trend(normal_orbit, aos, amps, amp2, channel_phase, channel_phase2, **kwargs)
-
-        #
-        # write to db
-        #
-
-        vd = VarDark(normal_orbit, aos, lcs_lin, amps, trends_lin, channel_phase, amp2, channel_phase2)
-        self.fill_mtbl(vd)
-        if self.created:
-            self.append(vd)
-        else:
-            self.create(vd)
+        return np.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
 
 def load_varkdark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
     if fname is None:
@@ -830,16 +591,28 @@ def load_varkdark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
 
 #- main ------------------------------------------------------------------------
 
-# a test product generating entity. runs only when this module is run as a program.
 if __name__ == "__main__":
-    start_orbit = 27085
-    end_orbit = 27195
-    print("building vardark long..")
-    vddl = VarDarkDb(verbose=False, db_name="sdmf_vardark_long.h5") # args=None
-    for orbit in range(start_orbit, end_orbit):
-        vddl.calc_and_store_orbit(orbit, verbose=False, shortFlag=False, longFlag=True)
-    print("building vardark short..")
-    vdds = VarDarkDb(verbose=False, db_name="sdmf_vardark_short.h5") # args=None
-    for orbit in range(start_orbit, end_orbit):
-        vdds.calc_and_store_orbit(orbit, verbose=False, shortFlag=True, longFlag=False)
+    """
+    just a test..
+    """
 
+    of = orbitfilter()
+    orbit = of.get_closest_monthly(43010)
+
+    ad = AllDarks([0.125, 0.5, 1.0])
+#    ad = AllDarks([0.5, 1.0])
+
+    ret = fit_monthly(ad, orbit, verbose=True, kappasigma=False, debug_pixnr=615, short=False)
+    channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends = ret 
+
+    pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
+
+    print("channel_phase1=",channel_phase1)
+    print("channel_phase2=",channel_phase2)
+    print("channel_amp2=",channel_amp2)
+    for pixnr in pixels:
+        print("PIXNR", pixnr)
+        print("ao=",aos[pixnr])
+        print("dc=",dcs[pixnr])
+        print("amp=",amps[pixnr])
+        print("trend=",trends[pixnr])
