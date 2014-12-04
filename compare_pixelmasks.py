@@ -702,7 +702,7 @@ if __name__ == "__main__":
     #print_new_dead_new_alive()
     #print_dead_quality()
     orbit = 43010
-    pixnr = 424+7*1024
+    pixnr = 431+7*1024
 
     # print_nr_ppg(orbit)
     print_criteria30(orbit, pixnr)

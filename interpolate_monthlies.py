@@ -131,12 +131,12 @@ if __name__ == "__main__":
     #
 
     if args.shortMode:
+        input_fname = 'monthly_fits_short.h5'
         output_fname = "interpolated_monthlies_short.h5"
     else:
+        input_fname = 'monthly_fits_long.h5'
         output_fname = "interpolated_monthlies_long.h5"
 
-    input_fname = 'monthly_fits_long.h5'
-    output_fname = 'interpolated_monthlies_long.h5'
     print(input_fname, "-> interpolate ->", output_fname)
 
     interpolate_monthlies(output_fname, input_fname)
