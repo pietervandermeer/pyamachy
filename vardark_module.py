@@ -198,7 +198,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if not np.isnan(np.sum(pix_readouts)): #  and np.all(pix_sigmas != 0)
+        if not np.isnan(np.sum(pix_readouts)) and np.all(pix_sigmas != 0):
             # pass a
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
@@ -255,7 +255,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
 
 def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, 
-                      give_errors=False, verbose=False, short=False, **kwargs):
+                      give_errors=False, verbose=False, short=False, kappasigma=False, **kwargs):
     """
     fit dark model to an orbits with normal (eclipse) dark states
     use parameters computed from nearest calibration orbits
@@ -283,6 +283,8 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         if set, return also fit uncertainty
     verbose : bool, optional
         if set, provide verbose output
+    kappasigma : bool, optional
+        if set, use kappasigma filter 
     """
 
     #
@@ -354,6 +356,26 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             if np.sum(idx) > 0:
                 pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+            dev_residual = np.std(residual)
+            avg_residual = np.mean(residual)
+
+            if kappasigma:
+                # pass b : coarse kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 10.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
+                dev_residual = np.std(residual)
+                avg_residual = np.mean(residual)
+
+                # pass c : finer kappa sigma filter 
+                idx = (residual-avg_residual)**2 > 5.*dev_residual
+                if np.sum(idx) > 0:
+                    pix_sigmas[idx] *= 50
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+
             n_done += 1
         else:
             continue

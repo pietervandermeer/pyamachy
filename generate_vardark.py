@@ -108,7 +108,7 @@ class VarDarkdb:
             self.ds_pixel = self.fid["dim_pixel"]
             self.ds_phase = self.fid["dim_phase"]
             self.ds_vdark = self.fid["varDark"]
-            self.ds_err_dcs = self.fid["errorDCs"]
+            self.ds_err_dcs = self.fid["errorLCs"]
             self.ds_err_trends = self.fid["errorTrends"]
             self.ds_datapoint_counts = self.fid["dataPointCounts"]
             self.ds_uncertainties = self.fid["uncertainties"]
@@ -346,8 +346,8 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             channel_amp2 = inter_amp2[idx]
 
             try:
-                #x__, dcs_, res_trends, dum1, dum2 = fit_eclipse_orbit(ad, orbit, aos, dcs, amps, channel_amp2, channel_phase1, channel_phase2)
-                list_ = fit_eclipse_orbit(ad, orbit, aos, dcs, amps, channel_amp2, channel_phase1, channel_phase2, give_errors=True, verbose=False)
+                list_ = fit_eclipse_orbit(ad, orbit, aos, dcs, amps, channel_amp2, channel_phase1, channel_phase2, 
+                                          give_errors=True, verbose=False)
                 x__, dcs_, res_trends, err_dcs_, err_trends_, dum1, dum2, uncertainty = list_
                 err_dcs[i_trend, :] = err_dcs_
                 err_trends[i_trend, :] = err_trends_
@@ -455,13 +455,10 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ # add interpolated lc offset (daily+seasonal variation)
             #print(xnew_)
             wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
-            if useTrendFit:
-                if i_trend >= 0:
-                    vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
-                else:
-                    vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
+            if i_trend >= 0:
+                vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
             else:
-                vddb.store(orbit, wave)
+                vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
         i += 1
 
     fin.close() # close interpolated monthlies database, won't be needing it anymore

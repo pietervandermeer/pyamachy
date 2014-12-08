@@ -693,7 +693,8 @@ class SMRcalib:
             indx = 7 * smr.channelSize + np.arange(smr.channelSize)
             corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
 
-        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_long.h5', 'r' )
+#        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_long.h5', 'r' )
+        fid_dc = h5py.File( 'vardark_long.h5', 'r' )
         orbits_dc = fid_dc['dim_orbit'][:]
         idx_dc_orb = np.argmin(abs(orbits_dc - smr.absOrbit))
         ds_dc = fid_dc["varDark"] # vardark dataset
