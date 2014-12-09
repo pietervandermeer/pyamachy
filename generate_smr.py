@@ -693,14 +693,15 @@ class SMRcalib:
             indx = 7 * smr.channelSize + np.arange(smr.channelSize)
             corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
 
-#        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_long.h5', 'r' )
-        fid_dc = h5py.File( 'vardark_long.h5', 'r' )
+#        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_short.h5', 'r' )
+        fid_dc = h5py.File('vardark_short.h5', 'r')
         orbits_dc = fid_dc['dim_orbit'][:]
         idx_dc_orb = np.argmin(abs(orbits_dc - smr.absOrbit))
         ds_dc = fid_dc["varDark"] # vardark dataset
         phase_sz = fid_dc["dim_phase"].size
 
-        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_long.h5', 'r' )
+#        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_short.h5', 'r' )
+        fid_ao = h5py.File('interpolated_monthlies_short.h5', 'r')
         orbits_ao = fid_ao['orbits'][:]
         idx_ao_orb = np.argmin(abs(orbits_ao - smr.absOrbit))
         ds_ao = fid_ao["aos"] # the analog offsets dataset

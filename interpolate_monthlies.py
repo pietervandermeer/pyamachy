@@ -73,6 +73,9 @@ def interpolate_monthlies(db_out_name, db_in_name):
     iorbits = fout.create_dataset("orbits", (n_orbits,), dtype='i')
     iphases = fout.create_dataset("phases", (n_orbits,2), dtype='f')
     iaos = fout.create_dataset("aos", (n_orbits,n_pix), dtype='f')
+    iaos.attrs["long_name"] = np.string_("analog offset (channel 8)")
+    iaos.attrs["units"] = np.string_("BU")
+    iaos.attrs["description"] = np.string_("SCIA analog offset of channel 8")
     iamps = fout.create_dataset("amps", (n_orbits,n_pix), dtype='f')
     iamp2 = fout.create_dataset("amp2", (n_orbits,), dtype='f')
 

@@ -35,10 +35,9 @@ def no_monthly(orbit, old_monthly, last_orbit):
 def fit_monthlies(db_out_name, short=False):
     ofilt = orbitfilter()
     if short:
-        ad = AllDarks([0.125, 0.06250])
+        ad = AllDarks([1.0, 0.5, 0.125, 0.0625]) 
     else:
         ad = AllDarks([1.0, 0.5, 0.125])
-        #ad = AllDarks([1.0, 0.5])
 
     # compute amount of monthlies
     n_monthlies = 0
@@ -68,7 +67,7 @@ def fit_monthlies(db_out_name, short=False):
         if not is_blacklisted(monthly):
             # compute monthly fit, to obtain analog offset
             print("compute monthly fit:", monthly, "..")
-            channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(ad, monthly)
+            channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(ad, monthly, short=short)
             aos_dset[i_monthly,:] = aos
             lcs_dset[i_monthly,:] = lcs
             amps_dset[i_monthly,:] = amps

@@ -108,7 +108,7 @@ class VarDarkdb:
             self.ds_pixel = self.fid["dim_pixel"]
             self.ds_phase = self.fid["dim_phase"]
             self.ds_vdark = self.fid["varDark"]
-            self.ds_err_dcs = self.fid["errorLCs"]
+            self.ds_err_dcs = self.fid["errorDCs"]
             self.ds_err_trends = self.fid["errorTrends"]
             self.ds_datapoint_counts = self.fid["dataPointCounts"]
             self.ds_uncertainties = self.fid["uncertainties"]

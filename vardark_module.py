@@ -78,6 +78,9 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         if set, use kappasigma filter 
     """
 
+    # minimum nr of degrees of freedom
+    min_degrees = 8
+
     orbit_range = orbit-.5, orbit+2.5
     if verbose:
         print(orbit_range)
@@ -128,7 +131,12 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if not np.isnan(np.sum(pix_readouts)):
+        idx_fin = np.isfinite(pix_readouts)
+        if np.sum(idx_fin) > min_degrees:
+            pix_readouts = pix_readouts[idx_fin]
+            pix_sigmas = pix_sigmas[idx_fin]
+            x = (ephases-orbit)[idx_fin], pet[idx_fin]
+
             # pass a
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
@@ -153,9 +161,6 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 50
                 fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
-                residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
-                dev_residual = np.std(residual)
-                avg_residual = np.mean(residual)
 
             n_done += 1
         else:
@@ -198,7 +203,12 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if not np.isnan(np.sum(pix_readouts)) and np.all(pix_sigmas != 0):
+        idx_fin = np.isfinite(pix_readouts)
+        if np.sum(idx_fin) > min_degrees:
+            pix_readouts = pix_readouts[idx_fin]
+            pix_sigmas = pix_sigmas[idx_fin]
+            x = (ephases-orbit)[idx_fin], pet[idx_fin]
+
             # pass a
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
@@ -245,6 +255,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         import matplotlib.pyplot as plt
         plt.cla()
         p = aos[debug_pixnr], lcs[debug_pixnr], amps[debug_pixnr], trends[debug_pixnr], channel_phase1, amps2[debug_pixnr], channel_phase2
+        x = ephases-orbit, pet
         model = scia_dark_fun2(p,x)
         print("model=", model)
         plt.plot(ephases-orbit, all_readouts[:,debug_pixnr], 'bo', label="data")
@@ -397,6 +408,32 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         return x, res_lcs, res_trends, all_readouts, all_sigmas
 
 def read_ch8_darks(orbit_range, stateid):
+    """
+    Read reduced channel 8dark states with specified state id from sdmf_extract_calib.
+    Corrects non-linearity.
+
+    Parameters
+    ----------
+    orbit_range: 2 element list of ints 
+        list comprising start and end orbit
+    stateid: int
+        state id of the dark
+
+    Returns
+    -------
+    jds : arraylike, float64
+        julian days of state executions
+    readouts : arraylike, 2d, float
+        readouts
+    noise : arraylike, 2d, float
+        measure of uncertainty of the readouts
+    tdet : float
+        detector temperature
+    pet : float
+        pixel exposure time (in seconds)
+    coadd : int
+        co-adding factor
+    """
     states = read_extracted_states_(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
     jds = state_mtbl['julianDay'][:]
@@ -611,6 +648,23 @@ def load_varkdark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
     else:
         return phases, orbit, thermal_background, analog_offset
 
+def load_sdmf30_dark(orbit):
+    """
+    load channel 8 analog offset and dark current from SDMF3.0 product: a good fall-back for nearly saturated pixels.
+    """
+    fname = "/SCIA/SDMF30/sdmf_dark.h5"
+    fid = h5py.File(fname, "r")
+    orbits = fid["orbitList"]
+    idx = orbits[:] == orbit
+    if np.sum(idx) == 0:
+        raise Exception("orbit ["+str(orbit)+"] not found in ["+fname+"]")
+    idx = np.where(idx)[0][0]
+    dset_ao = fid["analogOffset"]
+    dset_dc = fid["darkCurrent"]
+    aos = (dset_ao[7*1024:,idx]).flatten()
+    dcs = (dset_dc[7*1024:,idx]).flatten()
+    return aos, dcs
+
 #- main ------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -622,9 +676,8 @@ if __name__ == "__main__":
     orbit = of.get_closest_monthly(43010)
 
     ad = AllDarks([0.125, 0.5, 1.0])
-#    ad = AllDarks([0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=True, kappasigma=False, debug_pixnr=615, short=False)
+    ret = fit_monthly(ad, orbit, verbose=True, kappasigma=False, debug_pixnr=431, short=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends = ret 
 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
