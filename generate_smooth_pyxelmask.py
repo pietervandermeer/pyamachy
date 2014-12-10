@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-i', '--input', dest='input_fname', type=str, help="input (orbital) mask file name")
-    parser.add_argument('--log' dest='loglevel', type=str, 
+    parser.add_argument('--log', dest='loglevel', type=str, 
                         choices=("DEBUG", "INFO", "WARN", "ERROR", "FATAL"), 
                         default="INFO", help="logging level")
     parser.add_argument('-o', '--output', dest='output_fname', type=str, 

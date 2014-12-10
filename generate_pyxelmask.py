@@ -30,7 +30,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-o', '--output', dest='output_fname', type=str,
                         help="output file name")
-    parser.add_argument('--log' dest='loglevel', type=str, 
+    parser.add_argument('--log', dest='loglevel', type=str, 
                         choices=("DEBUG", "INFO", "WARN", "ERROR", "FATAL"), 
                         default="INFO", help="logging level")
     parser.add_argument('-c', action='store_true', dest="sdmf30_compat", 
