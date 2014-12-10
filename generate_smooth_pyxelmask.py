@@ -220,6 +220,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-i', '--input', dest='input_fname', type=str, help="input (orbital) mask file name")
+    parser.add_argument('--log' dest='loglevel', type=str, 
+                        choices=("DEBUG", "INFO", "WARN", "ERROR", "FATAL"), 
+                        default="INFO", help="logging level")
     parser.add_argument('-o', '--output', dest='output_fname', type=str, 
                         help="output file name")
     parser.add_argument('-c', action='store_true', dest="sdmf30_compat")
@@ -264,6 +267,33 @@ if __name__ == "__main__":
     print("input_mask_fname =", input_mask_fname)
     print("sdmf30_compat =", sdmf30_compat)
     print("orbitrange =", start_orbit, end_orbit)
+
+    #
+    # setup log level
+    #
+
+    numeric_level = getattr(logging, args.loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    #
+    # create log with name with form generate_pyxelmask_YY-MMM-DD_N.log 
+    #
+
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    i = 0
+    while True:
+        postfix = "_"+str(i) if i>0 else ""
+        logname = basename(__file__)+"_"+timestamp+postfix+".log"
+        if not isfile(logname):
+            break
+        i += 1
+
+    #
+    # open log
+    #
+
+    logging.basicConfig(filename=logname, level=numeric_level)
 
     #
     # load all pixel quality data, figure by figure

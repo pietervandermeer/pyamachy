@@ -30,6 +30,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-o', '--output', dest='output_fname', type=str,
                         help="output file name")
+    parser.add_argument('--log' dest='loglevel', type=str, 
+                        choices=("DEBUG", "INFO", "WARN", "ERROR", "FATAL"), 
+                        default="INFO", help="logging level")
     parser.add_argument('-c', action='store_true', dest="sdmf30_compat", 
                         help="compatibility, approximate SDMF3.0 pixel mask")
     parser.add_argument('-v', '--verbose', dest='verbose', 
@@ -61,18 +64,31 @@ if __name__ == "__main__":
     print("orbit_range =", orbit_range)
 
     #
-    # setup logging, create log with name with form generate_pyxelmask_YY-MMM-DD_N.log 
+    # setup log level
+    #
+
+    numeric_level = getattr(logging, args.loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    #
+    # create log with name with form generate_pyxelmask_YY-MMM-DD_N.log 
     #
 
     timestamp = datetime.now().strftime("%Y-%m-%d")
     i = 0
     while True:
-        postfix = str(i) if i>0 else ""
-        logname = basename(__file__)+"_"+timestamp+"_"+postfix+".log"
+        postfix = "_"+str(i) if i>0 else ""
+        logname = basename(__file__)+"_"+timestamp+postfix+".log"
         if not isfile(logname):
             break
         i += 1
-    logging.basicConfig(filename=logname, level=logging.DEBUG)
+
+    #
+    # open log
+    #
+
+    logging.basicConfig(filename=logname, level=numeric_level)
 
     #
     # generate the masks
