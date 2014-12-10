@@ -1,5 +1,8 @@
-# -*- coding: iso-8859-1 -*-
-# module containing pixel quality class.
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+"""
+Module containing pixel quality class.
+"""
 
 from __future__ import print_function, division
 
@@ -62,6 +65,28 @@ def calculate_light_figure(spec, verbose=False, give_smooth=False):
         return reldev, smooth
     else:
         return reldev
+
+def create_figure_dset(f, name, dims=None, data=None, chan_sz=1024):
+    """ creates a new figure (float per pixel) array in the hdf5 database """
+    print("creating "+name)
+    if dims is None and data is None:
+        dims = (0,chan_sz)
+    dtype = np.float64
+    ds = f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
+                          compression='gzip', compression_opts=3, 
+                          maxshape=(None,chan_sz), data=data)
+    return ds
+
+def create_mask_dset(f, name, dims=None, data=None, chan_sz=1024):
+    """ creates a new mask (bool per pixel) array in the hdf5 database """
+    print("creating "+name)
+    if dims is None and data is None:
+        dims = (0,chan_sz)
+    dtype = np.bool
+    ds = f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
+                          compression='gzip', compression_opts=3, 
+                          maxshape=(None,chan_sz), data=data)
+    return ds
 
 def plot_quality_number(spec, thresh):
     """ plot relative deviation and threshold of given channel of pixels """
@@ -522,24 +547,6 @@ class PixelQuality:
 
         return
 
-    def create_figure_dset(self, f, name):
-        """ creates a new figure (float per pixel) array in the database """
-        print("creating "+name)
-        dims = (0,self.num_chanpixels)
-        dtype = np.float64
-        f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
-                         compression='gzip', compression_opts=3, 
-                         maxshape=(None,self.num_chanpixels))
-
-    def create_mask_dset(self, f, name):
-        """ creates a new mask (bool per pixel) array in the database """
-        print("creating "+name)
-        dims = (0,self.num_chanpixels)
-        dtype = np.bool
-        f.create_dataset(name, dims, dtype=dtype, #chunks=(16,self.num_chanpixels), 
-                         compression='gzip', compression_opts=3, 
-                         maxshape=(None,self.num_chanpixels))
-
     def write_ascii(self, directory=None, all_figures=False):
         """ 
         write combined quality figure for this orbit to separate ascii file (<orbit>.txt)
@@ -560,7 +567,7 @@ class PixelQuality:
                 fout.write(str(self.combined[i])+"\n")
         return
 
-    def write(self, directory=None):
+    def write(self, directory=None, fname=None):
         """ 
         write data for this orbit to database 
         
@@ -572,9 +579,12 @@ class PixelQuality:
         """
         
         orbit = self.orbit
-        if directory is None:
-            directory = self.cfg['db_dir']
-        db_fname = directory + "/" + self.cfg['pixelmask_fname']
+        if fname is not None:
+            db_fname = fname
+        else:
+            if directory is None:
+                directory = self.cfg['db_dir']
+            db_fname = directory + "/" + self.cfg['pixelmask_fname']
         
         #
         # if database doesn't exist, then create it.. may take a while, but
@@ -592,22 +602,74 @@ class PixelQuality:
             f.attrs["sdmf30_compat"] = self.sdmf30_compat
             orbits = np.array([orbit], dtype='u2')
             entry_dates = np.array([nowstr]) 
-            f.create_dataset("orbits", (0,), dtype='u2', 
+            ds = f.create_dataset("orbits", (0,), dtype='u2', 
                              chunks=(1024,), compression='gzip', 
                              compression_opts=3, maxshape=(None,))
+            ds.attrs["long_name"] = np.string_("Absolute orbit number")
             f.create_dataset("entryDate", (0,), dtype='S20', 
                              chunks=(1024,), compression='gzip', 
                              compression_opts=3, maxshape=(None,))
-            self.create_figure_dset(f, "wlsResponse")
-            self.create_figure_dset(f, "sunResponse")
-            self.create_figure_dset(f, "saturation")
-            self.create_figure_dset(f, "darkError")
-            self.create_figure_dset(f, "darkResidual")
-            self.create_figure_dset(f, "noise")
-            self.create_figure_dset(f, "combined")
-            self.create_figure_dset(f, "chisquare3.0")
-            self.create_mask_dset(f, "invalid")
-            self.create_mask_dset(f, "combinedFlag")
+            ds = create_figure_dset(f, "wlsResponse", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("WLS Response quality figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that gives relative deviation from expected WLS (White Light Source) response.
+                                                 For instance, a 10%% response is represented as 0.1, a 1000%% response is too.
+                                                 """)
+
+            ds = create_figure_dset(f, "sunResponse", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Sun Response quality figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that gives relative deviation from expected Sun-over-ESM diffuser (state 62) response.
+                                                 For instance, a 10%% response is represented as 0.1, a 1000%% response is too.
+                                                 """)
+
+            ds = create_figure_dset(f, "saturation", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Saturation quality figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the dark current is fully saturated (1.0), 
+                                                 not saturated (0.0), or somewhere inbetween.
+                                                 This figure is only nonzero if darks are closer than a few thousand BU removed from saturation.""")
+
+            ds = create_figure_dset(f, "darkError", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Dark correction error quality figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the dark correction error (darks corrected by vardark) 
+                                                 is too big (1.0), none (0.0), or somewhere inbetween.""")
+
+            ds = create_figure_dset(f, "darkResidual", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Dark fit residual quality figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the fit residual is too big (1.0), none (0.0), or somewhere inbetween.""")
+
+            ds = create_figure_dset(f, "noise", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Noise criterion from SDMF3.0 (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if a pixel exceeds its expected noise 
+                                                 (from beginning of mission) by a large margin. 
+                                                 This is SDMF3.0 data, which may be used for backward compatibility.""")
+
+            ds = create_figure_dset(f, "combined", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Combined figure (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("Figure [0.0..1.0] that combines all the other figures to estimate a total quality for the pixel (channel 8).")
+
+            ds = create_figure_dset(f, "chisquare3.0", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("Dark Chi^2 from SDMF3.0 (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Chi-squared from the dark signal fit for channel 8. 
+                                                 This is SDMF3.0 data, which may be used for backward compatibility.""")
+
+            ds = create_mask_dset(f, "invalid", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("invalid flag (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("Boolean flag that indicates if the dark fit has succeeded (1) or failed (0).")
+
+            ds = create_mask_dset(f, "combinedFlag", chan_sz=self.num_chanpixels)
+            ds.attrs["long_name"] = np.string_("combined flag (channel 8)")
+            ds.attrs["units"] = np.string_("-")
+            ds.attrs["description"] = np.string_("""Boolean flag that indicates a pixel as good (0), or bad (1). 
+                                                 It combines all criteria (= `combined' figure thesholded).""")
+
             f.close()
             print('created db')
         
@@ -876,15 +938,15 @@ if __name__ == '__main__':
     p = PixelQuality(sdmf30_compat=False)
     print("initialised.")
 
-    for orbit in range(28631,53200):
+#    for orbit in range(28631,53200):
 #    for orbit in range(4151,53200):
-#    for orbit in range(42999,43001):
-#        p.calculate(orbit)
-        try:
-            p.calculate(orbit)
-        except:
-           logging.warning("calculation failed for orbit %d!" % orbit)
-           continue
+    for orbit in range(42999,43001):
+        p.calculate(orbit)
+        # try:
+        #     p.calculate(orbit)
+        # except:
+        #    logging.warning("calculation failed for orbit %d!" % orbit)
+        #    continue
 
         print("orbit %d computed" % orbit)
         p.write(directory=".")

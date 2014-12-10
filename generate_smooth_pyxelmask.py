@@ -1,17 +1,21 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+"""
+Smooths channel 8 pixel quality mask.
+"""
+
 from __future__ import print_function, division
 
 import numpy as np 
 import h5py
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import scipy.misc
-import warnings
-warnings.simplefilter("error") # warnings to errors
 
+from pixelquality_module import create_figure_dset, create_mask_dset
 from mask import Mask
 
 #-- globals --------------------------------------------------------------------
 
+input_mask_fname = "sdmf_pyxelmask.h5"
 
 #-- functions ------------------------------------------------------------------
 
@@ -93,7 +97,28 @@ def plot(orbits_f, flt, orbits_b, bin, pixnr):
     return
 
 def load_sdmf32_figure(start_orbit, end_orbit, fig_name):
-    fname = "sdmf_pyxelmask.h5"
+    """
+    Load sdmf (orbital) pixelmask figure from database.
+
+    Parameters
+    ----------
+
+    start_orbit : int
+        start orbit
+    end_orbit : int
+        end orbit
+    fig_name : str
+        figure name
+
+    Returns
+    -------
+
+    orbits32 : array, dtype='u2'
+        orbit list 
+    a : array, dtype=float
+        figure data
+    """
+    fname = input_mask_fname
     fid = h5py.File(fname, "r")
     ds_orbits = fid["orbits"]
     orbits = ds_orbits[:]
@@ -123,7 +148,7 @@ def load_sdmf32_figure(start_orbit, end_orbit, fig_name):
     return orbits32, a 
 
 def compare_smoothmasks():
-    fname = "sdmf_pyxelmask.h5"
+    fname = input_mask_fname #"sdmf_pyxelmask.h5"
     fid = h5py.File(fname, "r")
     ds_orbits = fid["orbits"]
     idx = np.argsort(ds_orbits[:])
@@ -182,6 +207,8 @@ def compare_smoothmasks():
 
 if __name__ == "__main__":
     import argparse
+    import warnings
+    warnings.simplefilter("error") # warnings to errors
     from envisat import parseOrbitList
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
@@ -191,8 +218,10 @@ if __name__ == "__main__":
     # parse command line arguments
     #
 
-    parser = argparse.ArgumentParser(description='Smooths channel 8 pixel quality mask.')
-    parser.add_argument('-o', '--output', dest='output_fname', type=str)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-i', '--input', dest='input_fname', type=str, help="input (orbital) mask file name")
+    parser.add_argument('-o', '--output', dest='output_fname', type=str, 
+                        help="output file name")
     parser.add_argument('-c', action='store_true', dest="sdmf30_compat")
     parser.add_argument('--config', dest='config_file', type=file, 
                         default='default3.2.cfg')
@@ -209,12 +238,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #
-    # handle command line arguments
+    # set defaults
     #
 
-    start_orbit = 5593
+    start_orbit = 4152
     end_orbit = 53000
     output_fname = "sdmf_smooth_pyxelmask.h5"
+
+    #
+    # handle command line arguments
+    #
 
     sdmf30_compat = args.sdmf30_compat
     verbose = args.verbose
@@ -222,11 +255,13 @@ if __name__ == "__main__":
     if orbitrange is not None:
         start_orbit = orbitrange[0]
         end_orbit = orbitrange[1]
-    
+    if args.input_fname is not None:
+        input_mask_fname = args.input_fname
     if args.output_fname is not None:
         output_fname = args.output_fname
 
     print("output_fname =", output_fname)
+    print("input_mask_fname =", input_mask_fname)
     print("sdmf30_compat =", sdmf30_compat)
     print("orbitrange =", start_orbit, end_orbit)
 
@@ -301,19 +336,69 @@ if __name__ == "__main__":
     fid = h5py.File(output_fname, "w")
     fid.attrs['sdmf30_compat']=sdmf30_compat
 
-    fid.create_dataset("orbits", orbits.shape, dtype=np.int, data=orbits)
-    fid.create_dataset("combined", combined.shape, dtype=np.float, data=combined)
-    fid.create_dataset("combinedFlag", combined_flag.shape, dtype=np.bool, data=combined_flag)
-    fid.create_dataset("invalid", inv_smooth.shape, dtype=np.float, data=inv_smooth)
-    fid.create_dataset("saturation", sat_smooth.shape, dtype=np.float, data=sat_smooth)
-    fid.create_dataset("sunResponse", sun_smooth.shape, dtype=np.float, data=sun_smooth)
-    fid.create_dataset("wlsResponse", wls_smooth.shape, dtype=np.float, data=wls_smooth)
+    ds = fid.create_dataset("orbits", orbits.shape, dtype=np.int, data=orbits)
+    ds.attrs["long_name"] = np.string_("Absolute orbit number")
+
+    ds = create_figure_dset(fid, "combined", dims=combined.shape, data=combined)
+    ds.attrs["long_name"] = np.string_("Smooth combined figure (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("Figure [0.0..1.0] that combines all the other figures to estimate a total quality for the pixel (channel 8).")
+
+    ds = create_mask_dset(fid, "combinedFlag", dims=combined_flag.shape, data=combined_flag)
+    ds.attrs["long_name"] = np.string_("Smooth combined flag (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("""Boolean flag that indicates a pixel as good (0), or bad (1). 
+                                         It combines all criteria (= `combined' figure thesholded).""")
+
+    ds = create_figure_dset(fid, "invalid", dims=inv_smooth.shape, data=inv_smooth)
+    ds.attrs["long_name"] = np.string_("Smooth invalid flag (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("Boolean flag that indicates if the dark fit has succeeded (1) or failed (0).")
+
+    ds = create_figure_dset(fid, "saturation", dims=sat_smooth.shape, data=sat_smooth)
+    ds.attrs["long_name"] = np.string_("Smooth saturation quality figure (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the dark current is fully saturated (1.0), 
+                                         not saturated (0.0), or somewhere inbetween.
+                                         This figure is only nonzero if darks are closer than a few thousand BU removed from saturation.""")
+
+    ds = create_figure_dset(fid, "sunResponse", dims=sun_smooth.shape, data=sun_smooth)
+    ds.attrs["long_name"] = np.string_("Smooth sun response quality figure (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that gives relative deviation from expected Sun-over-ESM diffuser (state 62) response.
+                                         For instance, a 10%% response is represented as 0.1, a 1000%% response is too.
+                                         """)
+
+    ds = create_figure_dset(fid, "wlsResponse", dims=wls_smooth.shape, data=wls_smooth)
+    ds.attrs["long_name"] = np.string_("Smooth WLS Response quality figure (channel 8)")
+    ds.attrs["units"] = np.string_("-")
+    ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that gives relative deviation from expected WLS (White Light Source) response.
+                                         For instance, a 10%% response is represented as 0.1, a 1000%% response is too.
+                                         """)
     if sdmf30_compat:
-        fid.create_dataset("chisquare3.0", chi_smooth.shape, dtype=np.float, data=chi_smooth)
-        fid.create_dataset("noise", noise_smooth.shape, dtype=np.float, data=noise_smooth)
+        ds = create_figure_dset(fid, "chisquare3.0", dims=chi_smooth.shape, data=chi_smooth)
+        ds.attrs["long_name"] = np.string_("Smooth dark Chi^2 from SDMF3.0 (channel 8)")
+        ds.attrs["units"] = np.string_("-")
+        ds.attrs["description"] = np.string_("""Chi-squared from the dark signal fit for channel 8. 
+                                             This is SDMF3.0 data, which may be used for backward compatibility.""")
+
+        ds = create_figure_dset(fid, "noise", dims=noise_smooth.shape, data=noise_smooth)
+        ds.attrs["long_name"] = np.string_("Smooth noise criterion from SDMF3.0 (channel 8)")
+        ds.attrs["units"] = np.string_("-")
+        ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if a pixel exceeds its expected noise 
+                                             (from beginning of mission) by a large margin. 
+                                             This is SDMF3.0 data, which may be used for backward compatibility.""")
     else:
-        fid.create_dataset("darkError", darkerr_smooth.shape, dtype=np.float, data=darkerr_smooth)
-        fid.create_dataset("darkResidual", darkres_smooth.shape, dtype=np.float, data=darkres_smooth)
+        ds = create_figure_dset(fid, "darkError", dims=darkerr_smooth.shape, data=darkerr_smooth)
+        ds.attrs["long_name"] = np.string_("Smooth dark correction error quality figure (channel 8)")
+        ds.attrs["units"] = np.string_("-")
+        ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the dark correction error (darks corrected by vardark) 
+                                             is too big (1.0), none (0.0), or somewhere inbetween.""")
+
+        ds = create_figure_dset(fid, "darkResidual", dims=darkres_smooth.shape, data=darkres_smooth)
+        ds.attrs["long_name"] = np.string_("Smooth dark fit residual quality figure (channel 8)")
+        ds.attrs["units"] = np.string_("-")
+        ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the fit residual is too big (1.0), none (0.0), or somewhere inbetween.""")
 
     fid.close()
 
