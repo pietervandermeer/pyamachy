@@ -28,7 +28,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.orbitrange is None:
-        orbitrange = 4152,53200
+        orbitrange = "4152-53200"
 
     general_args = " --log "+args.loglevel+" --orbitrange="+orbitrange
 

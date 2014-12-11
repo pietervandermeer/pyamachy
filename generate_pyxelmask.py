@@ -1,9 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 Generates orbital quality mask for SCIA channel 8. 
 Individual criteria are floating point [0.0 .. 1.0]. 
-These are combined are thresholded to the boolean `combinedFlag'.
+These are combined and are thresholded, and result in the boolean `combinedFlag'.
 """
 
 from __future__ import division, print_function

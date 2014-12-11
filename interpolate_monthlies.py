@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 Interpolates vardark fit parameters between monthly orbits.
 This uses a monthly_fits*.h5 database as input.
@@ -71,13 +74,29 @@ def interpolate_monthlies(db_out_name, db_in_name):
 
     fout = h5py.File(db_out_name, "w")
     iorbits = fout.create_dataset("orbits", (n_orbits,), dtype='i')
+    iorbits.attrs["long_name"] = np.string_("Absolute orbit numbers.")
+    iorbits.attrs["units"] = np.string_("-")
+    iorbits.attrs["description"] = np.string_("Absolute orbit numbers.")
+
     iphases = fout.create_dataset("phases", (n_orbits,2), dtype='f')
+    iphases.attrs["long_name"] = np.string_("Orbital phase shift wrt eclipse of fundamental and first harmonic [0..1], per orbit, per pixel.")
+    iphases.attrs["units"] = np.string_("-")
+    iphases.attrs["description"] = np.string_("Phase shifts of channel 8 orbital variation")
+
     iaos = fout.create_dataset("aos", (n_orbits,n_pix), dtype='f')
     iaos.attrs["long_name"] = np.string_("analog offset (channel 8)")
     iaos.attrs["units"] = np.string_("BU")
     iaos.attrs["description"] = np.string_("SCIA analog offset of channel 8")
+
     iamps = fout.create_dataset("amps", (n_orbits,n_pix), dtype='f')
+    iamps.attrs["long_name"] = np.string_("Amplitude of fundamental per orbit per pixel.")
+    iamps.attrs["units"] = np.string_("BU/s")
+    iamps.attrs["description"] = np.string_("Fundamental amplitude, channel 8")
+
     iamp2 = fout.create_dataset("amp2", (n_orbits,), dtype='f')
+    iamp2.attrs["long_name"] = np.string_("Amplitude of first harmonic, relative to fundamental amplitude [0..1], channel average.")
+    iamp2.attrs["units"] = np.string_("-")
+    iamp2.attrs["description"] = np.string_("Amplitude of first harmonic, channel 8")
 
     fun_phase1 = extrap1d(interp1d(monthlies, phase_dset[:,0]))
     fun_phase2 = extrap1d(interp1d(monthlies, phase_dset[:,1]))

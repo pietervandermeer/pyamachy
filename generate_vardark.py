@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """
 Computes channel 8 variable dark current signal in BU/s for specified orbit range. 
@@ -82,7 +83,15 @@ class VarDarkdb:
         self.ds_err_dcs = self.fid.create_dataset("errorDCs", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
         self.ds_err_trends = self.fid.create_dataset("errorTrends", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
         self.ds_datapoint_counts = self.fid.create_dataset("dataPointCounts", (0,), maxshape=(None,), dtype=np.int16)
+        dset = self.ds_datapoint_counts
+        dset.attrs['long_name'] = np.string_("Fit datapoints (channel 8)")
+        dset.attrs['units'] = np.string_("-")
+        dset.attrs['description'] = np.string_("Number of data points used per orbit to compute fit.")
         self.ds_uncertainties = self.fid.create_dataset("uncertainties", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
+        dset = self.ds_uncertainties
+        dset.attrs['long_name'] = np.string_("Standard deviation of fit residual per orbit per pixel. Used as a measure of uncertainty.")
+        dset.attrs['units'] = np.string_("sqrt(BU)")
+        dset.attrs['description'] = np.string_("Number of data points used per orbit to compute fit.")
 
         return
 
