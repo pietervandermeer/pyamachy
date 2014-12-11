@@ -24,6 +24,11 @@
 #  SECTION MAIN
 #  - code to be run as a standalone program
 #
+
+"""
+Perform calibration on Sciamachy State 62 data.
+"""
+
 from __future__ import print_function
 from __future__ import division
 
@@ -728,26 +733,28 @@ class SMRcalib:
         #print(corrsimu[7*1024:8*1024], corrvar[7*1024:8*1024], corr[7*1024:8*1024])
         #print(smr.spectra[smr.numSpectra/2, 7*1024:8*1024])
 
-        plt.cla()
-        #print(specsimu.shape, specvar.shape, smr.spectra.shape)
-        #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
-        plt.plot(np.arange(1024), specsimu[10, 7*1024:8*1024].flatten(), 'bo', label='simudark 3.1')
-        plt.plot(np.arange(1024), specvar[10, 7*1024:8*1024].flatten(), 'ro', label='vardark 3.2')
-        plt.plot(np.arange(1024), specnorm[10, 7*1024:8*1024].flatten(), 'go', label='generic 3.1')
-        # plt.plot(np.arange(1024), corrvar[7*1024:8*1024], 'ro', label='vardark 3.2')
-        # plt.plot(np.arange(1024), corrsimu[7*1024:8*1024], 'bo', label='simudark 3.1')
-        # plt.plot(np.arange(1024), corr[7*1024:8*1024], 'go', label='generic 3.1')
-        plt.legend(loc='best')
-        plt.show()
+        # plt.cla()
+        # #print(specsimu.shape, specvar.shape, smr.spectra.shape)
+        # #print(specsimu[smr.numSpectra/2, 7*1024:8*1024])
+        # plt.plot(np.arange(1024), specsimu[10, 7*1024:8*1024].flatten(), 'bo', label='simudark 3.1')
+        # plt.plot(np.arange(1024), specvar[10, 7*1024:8*1024].flatten(), 'ro', label='vardark 3.2')
+        # plt.plot(np.arange(1024), specnorm[10, 7*1024:8*1024].flatten(), 'go', label='generic 3.1')
+        # # plt.plot(np.arange(1024), corrvar[7*1024:8*1024], 'ro', label='vardark 3.2')
+        # # plt.plot(np.arange(1024), corrsimu[7*1024:8*1024], 'bo', label='simudark 3.1')
+        # # plt.plot(np.arange(1024), corr[7*1024:8*1024], 'go', label='generic 3.1')
+        # plt.legend(loc='best')
+        # plt.show()
 
         #
-        # just stick with the generic sdmf 3.1 dark correction for now.. 
-        # this saves some bad pixels, although the better pixels are probably 1 or 2 BU off.. 
-        # if that matters at all on 10000 BU is to be seen. 
+        # sdmf 3.1 dark correction is not suitable for (almost) saturated pixels. 
+        # for good pixels it's something like 3 BU off due to not having orbital variation
+        # simudark is ok, but is somewhat biased due to not having 0.125s pet.
+        # vardark is the best. the pixels with dark current > 130 kBU/s are not modelled well, 
+        # but these are useless in any case (no nadir data, and limb is mostly dark). 
         #
 
         if self.darkVersion == "sdmf31":
-            smr.spectra -= corr 
+            smr.spectra -= corr
         elif self.darkVersion == "vardark":
             smr.spectra -= corrvar
         elif self.darkVersion == "simudark":
@@ -1460,11 +1467,6 @@ def handleCmdParams():
         else:
             return v1
 
-    def parseDarkVersion(string):
-        if string not in ("sdmf31", "simudark", "vardark"):
-            raise ArgumentTypeError("unknown darkVersion "+string)
-        return string
-
     def parseChannelList( str ):
         msg1 = "'" + str + "' is not a range or number." \
             + " Expected forms like '1-5' or '2'."
@@ -1481,7 +1483,7 @@ def handleCmdParams():
 
     parser = argparse.ArgumentParser( 
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description= 'Perform calibration on Sciamachy State 62 data',
+        description=__doc__,
         epilog=SMRcalib.__doc__ )
 
     parser.add_argument( '-v', '--verbose', action='store_true',
@@ -1502,16 +1504,15 @@ def handleCmdParams():
     parser_db.add_argument( '--orbit', type=parseOrbitList,
                             default=None,
                             help='process data from a orbit range' )
-    parser_db.add_argument( '-c', '--calibration', default='full', 
-                            type=parseCalibList,
-            help='calibration IDs (comma separated), or \"none\" or \"full\"' )
+    parser_db.add_argument( '-c', '--calibration', default='full', type=parseCalibList,
+                            help='calibration IDs (comma separated), or \"none\" or \"full\"' )
     parser_db.add_argument( '--truncate', action='store_true', default=False,
                             help='destroy database and start a new one' )
     parser_db.add_argument( '-P', '--progressbar', action='store_true', 
                             default=False, help='display progress bar' )
-    parser_db.add_argument( '-d', '--darkVersion', default='sdmf31', 
-                            type=parseDarkVersion,
-            help='dark current correction "sdmf31", "vardark", or "simudark"' )
+    parser_db.add_argument('-d', '--darkVersion', default='vardark', 
+                           type=str, choices=("sdmf31", "simudark", "vardark"),
+                           help='dark current correction type')
     parser_show = subparsers.add_parser( 'show',
                                          help='options to display SMR' )
     parser_show.add_argument( '--orbit', type=int, default=12005, 

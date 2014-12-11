@@ -9,6 +9,7 @@ from __future__ import print_function, division
 import numpy as np 
 import h5py
 import matplotlib.pyplot as plt
+import logging
 
 from pixelquality_module import create_figure_dset, create_mask_dset
 from mask import Mask
@@ -208,10 +209,12 @@ def compare_smoothmasks():
 if __name__ == "__main__":
     import argparse
     import warnings
+    from datetime import datetime
     warnings.simplefilter("error") # warnings to errors
+    from os.path import basename, isfile
     from envisat import parseOrbitList
-    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
+    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
     num_pixels = 1024
 
     #
