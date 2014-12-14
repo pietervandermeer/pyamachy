@@ -1,32 +1,16 @@
-# -*- coding: iso-8859-1 -*-
-#
-# COPYRIGHT (c) 2014 SRON (pieter.van.der.meer@sron.nl)
-#
-#   This is free software; you can redistribute it and/or modify it
-#   under the terms of the GNU General Public License, version 2, as
-#   published by the Free Software Foundation.
-#
-#   The software is distributed in the hope that it will be useful, but
-#   WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#   General Public License for more details.
-#
-#   You should have received a copy of the GNU General Public License
-#   along with this program; if not, write to the Free Software
-#   Foundation, Inc., 59 Temple Place - Suite 330, 
-#   Boston, MA  02111-1307, USA.
-#
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+functions and classes related to SCIAMACHY operation and instrument
+2011, 2014 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
+"""
 
 from __future__ import print_function, division
 
 import numpy as np
 import h5py
 import ConfigParser
-
-"""
-functions and classes related to SCIAMACHY operation and instrument
-2011, 2014 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
-"""
 
 channels = ['1','2','3','4','5','6','6+','7','8']
 pixranges = [np.arange(1024), \
@@ -297,7 +281,7 @@ class PetNotFoundError(Exception):
 # channel 8 only, of course. 
 def get_darkstateid(pet, orbit):
     orbit = int(orbit)
-    if orbit >= 1990 and orbit < 4151:
+    if (orbit >= 1990) and (orbit < 4151):
         if pet == 2:
             return 67
         elif pet == 0.5:
@@ -306,7 +290,7 @@ def get_darkstateid(pet, orbit):
             return 46
         else:
             raise PetNotFoundError("pet "+str(pet)+" not present between orbits 1990 and 4151")
-    if orbit >= 4151 and orbit < 43362:
+    elif (orbit >= 4151) and (orbit < 43362):
         if pet == 2:
             return 67
         elif pet == 1:
@@ -319,7 +303,7 @@ def get_darkstateid(pet, orbit):
             return 46
         else:
             raise PetNotFoundError("pet "+str(pet)+" not present between orbits 4151 and 43362")
-    elif orbit >= 43362 and orbit < 60000:
+    elif (orbit >= 43362) and (orbit < 60000):
         if pet == 1:
             return 67
         elif pet == 0.5:

@@ -1,4 +1,6 @@
-# -*- coding: iso-8859-1 -*-
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 Package that features two graph viewers (1 interactive based on WxPython, 
 1 non-interactive that writes straight to PNG)

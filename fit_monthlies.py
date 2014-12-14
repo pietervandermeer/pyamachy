@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 Fits vardark parameters to monthly calibration orbits and writes to database monthly_fits_*.h5. 
 NOTE: file will be truncated!

@@ -18,18 +18,6 @@ from envisat import PhaseConverter
 from sciamachy_module import petcorr, orbitfilter, get_darkstateid, read_extracted_states_, NonlinCorrector
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
-#-------------------------SECTION VERSION-----------------------------------
-
-_swVersion = {'major': 0,
-              'minor': 3,
-              'revision' : 0}
-_calibVersion = {'major': 0,
-                 'minor': 1,
-                 'revision' : 0}
-_dbVersion = {'major': 0,
-              'minor': 2,
-              'revision' : 0}
-
 #- globals ---------------------------------------------------------------------
 
 # orbit phase at which trending point lies. eclipse phase definition
@@ -487,17 +475,20 @@ class AllDarks():
         """
         # concat all states
         for petje in self.petlist:
-            orbit = orbit_range[0] # TODO: this could be on the border of two state definitions
+            if ((orbit_range[0] < 43361) and (orbit_range[1] > 43362)):
+                raise Exception("orbit range "+str(orbit_range)+" crosses OCR43!") # dark state definition should not change during 1 orbit range
+            orbit = (orbit_range[0]+orbit_range[1]) // 2 # take the center to be sure we're not on the other side of OCR43
             # a bit hacky, but since we really do not have these orbits with 1.0s PET, it's best to just skip instead of some complicated exception handling 
             if ((petje == 1.0) or (petje == 0.125)) and (orbit < 4151):
                 continue
             stateid = get_darkstateid(petje, orbit)
+            print(petje, stateid)
             jds_, readouts_, noise_, tdet_, pet_, coadd_ = read_ch8_darks(orbit_range, stateid)
             self.jds_ = np.concatenate((self.jds_, jds_))
             self.readouts_ = np.concatenate((self.readouts_, readouts_))
             self.noise_ = np.concatenate((self.noise_, noise_))
             self.tdet_ = np.concatenate((self.tdet_, tdet_))
-            self.pet_ = np.concatenate((self.pet_, pet_))
+            self.pet_ = np.concatenate((self.pet_, petje+np.zeros(jds_.size)))
             self.coadd_ = np.concatenate((self.coadd_, coadd_))
 
         return
@@ -661,11 +652,12 @@ if __name__ == "__main__":
     """
 
     of = orbitfilter()
-    orbit = of.get_closest_monthly(43010)
+    orbit = of.get_closest_monthly(43500)
+    print(orbit)
 
     ad = AllDarks([0.125, 0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=True, kappasigma=False, debug_pixnr=431, short=True)
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=489, short=False)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends = ret 
 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
