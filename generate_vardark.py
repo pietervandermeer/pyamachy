@@ -10,12 +10,23 @@ from __future__ import print_function, division
 
 import numpy as np
 import h5py
+import matplotlib.pyplot as plt
+import warnings
+from scipy.interpolate import interp1d
+import os.path
+import logging
+
+from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
+from sciamachy_module import get_darkstateid, petcorr, n_chanpix
+from vardark_module import AllDarks, trending_phase, fit_eclipse_orbit, FitFailedError, NotEnoughDataError
 
 #-- functions ------------------------------------------------------------------
 
 class VarDarkdb:
     '''
+    Handles all IO of vardark data to and from HDF5 database.
     '''
+
     def create(self, h5_name, sz_phase=50, sz_channel=1024, use_trendfit=False, short_pet=False):
         '''
         initialize HDF5 file
@@ -50,7 +61,7 @@ class VarDarkdb:
                       'This is a netCDF dimension but not a netCDF variable.' )
         self.ds_pixel = dset
 
-        phases = np.arange( self.phase_sz, dtype='f' ) / float(self.phase_sz)
+        phases = np.arange( self.phase_sz+1, dtype='f' ) / float(self.phase_sz) #+1, easier for data user to interpolate
         dset = self.fid.create_dataset( 'dim_phase', data=phases )
         dset.dims.create_scale( self.fid['dim_phase'], 
                       'This is a netCDF dimension but not a netCDF variable.' )
@@ -96,9 +107,11 @@ class VarDarkdb:
         return
 
     def open(self, h5_name, sz_phase=50, sz_channel=1024, use_trendfit=False, short_pet=False):
-        self.h5_name = np.string_(h5_name)
+        """
+        Open existing database.
+        """
 
-        # TODO: check if this matches the existing db's dimensions
+        self.h5_name = np.string_(h5_name)
         self.channel_sz = sz_channel
         self.phase_sz = sz_phase
 
@@ -124,9 +137,13 @@ class VarDarkdb:
         except KeyError:
             raise Exception("unable to open one or more datasets in "+h5_name)
 
+        #
+        # check if this matches the existing db's dimensions
+        #
+
         self.n_write = self.ds_orbit.size
         n_pixel = self.ds_pixel.size
-        n_phase = self.ds_phase.size
+        n_phase = self.ds_phase.size-1 # because there is 1 additional phase to facilitate the data user (linear interpolation)
         if n_pixel != sz_channel:
             raise Exception("nr of pixels does not match between user-specified and existing database!")
         if n_phase != sz_phase:
@@ -239,7 +256,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         if set, compute short pet vardark
     """
 
-    import logging
+    logger = logging.getLogger(__name__)
 
     #
     # open interpolated monthlies
@@ -370,10 +387,16 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 trending_phis[i_trend] = trending_phase+orbit
                 trending_orbits[i_trend] = orbit
                 i_trend += 1
-            except Exception as e:
-                # just skip to next orbit and don't store any data, but do log a warning!
-                logging.warning("failed to fit orbit.. "+str(e))
+            except NotEnoughDataError as e:
+                # not enough datapoints for fit
+                # non-fatal exception just skip to next orbit and don't store any data, but do log a warning!
+                logger.warning("orbit "+str(orbit)+":"+str(e))
                 datapoint_count[i_orbit] = 0         
+            except (FitFailedError, ValueError, Exception) as e:
+                # unexpected exceptions and expected fatal exceptions
+                logger.error("ex type: "+str(type(e)))
+                logger.exception(e)
+                raise
         i_orbit += 1
 
     avg_phi /= i_trend
@@ -405,7 +428,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     ximin = int(xmin)
     ximax = int(xmax)
-    xnew = np.linspace(ximin, ximax, (ximax-ximin)*pts_per_orbit+1)
+    xnew = np.linspace(ximin, ximax, (ximax-ximin)*(pts_per_orbit)+1)
     phi_t = avg_phi # trending_phase
     print("phi_t=",phi_t)
 
@@ -430,7 +453,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     print("interpolate trend..")
     xt = np.array([phi_t]) # trending_phase
-    wave = np.empty([pts_per_orbit, n_pix])
+    wave = np.empty([pts_per_orbit+1, n_pix])
     full_wave = np.empty(xnew.size)
     out_orblist = np.array([], dtype=np.int32)
 
@@ -451,19 +474,19 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         channel_phase1 = inter_phases[i_orbit,0]
         channel_phase2 = inter_phases[i_orbit,1]
         channel_amp2 = inter_amp2[i_orbit]
-        idx = xnewi == orbit
+        idx = (xnewi == orbit) | (xnew == (orbit+1)) # current orbit and first point in the new orbit (easier for data user)
         xnew_ = xnew[idx]
         if pixnr is not None:
             p = aos[pixnr], dcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
-            wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no lc offset
+            wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
             full_wave[idx] = wave_ + f(xnew_) # add interpolated lc offset (daily+seasonal variation)
         else:
             for i_pix in range(n_pix):
                 p = aos[i_pix], dcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
-                wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no lc offset
-                wave[pts_per_orbit-xnew_.size:pts_per_orbit, i_pix] = wave_ # add interpolated lc offset (daily+seasonal variation)
+                wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
+                wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
             #print(xnew_)
-            wave[pts_per_orbit-xnew_.size:pts_per_orbit, :] += f(xnew_)
+            wave[:, :] += f(xnew_)
             if i_trend >= 0:
                 vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
             else:
@@ -492,19 +515,14 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
 if __name__ == "__main__":
     import argparse
+    import sys
+    from os.path import basename, isfile
     from argparse import ArgumentParser, ArgumentTypeError
-    import subprocess
-    import matplotlib.pyplot as plt
-    import warnings
-    from scipy.interpolate import interp1d
-    from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
-    import os.path
-    #warnings.simplefilter("error") # warnings to errors
+    from datetime import datetime
+
+    warnings.simplefilter("error") # warnings to errors
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
-    from sciamachy_module import get_darkstateid, petcorr, n_chanpix
-    from vardark_module import AllDarks, trending_phase, fit_eclipse_orbit
-    import envisat
     from envisat import parseOrbitList
 
     n_pix = n_chanpix
@@ -519,6 +537,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-o', '--output', dest='output_fname', type=str)
+    parser.add_argument('--log', dest='loglevel', type=str, 
+                        choices=("DEBUG", "INFO", "WARN", "ERROR", "FATAL"), 
+                        default="INFO", help="logging level")
     parser.add_argument('--config', dest='config_file', type=file, 
                         default='default3.1.cfg')
     parser.add_argument('-v', '--verbose', dest='verbose', 
@@ -594,6 +615,43 @@ if __name__ == "__main__":
             interpolate_monthlies(input_dbname, path+"/monthly_fits_long.h5")
 
     print(input_dbname, "-> (generate_vardark) -> ", dbname)
+
+    #
+    # setup log level
+    #
+
+    numeric_level = getattr(logging, args.loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    #
+    # create log with name with form generate_pyxelmask_YY-MMM-DD_N.log 
+    #
+
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    i = 0
+    while True:
+        postfix = "_"+str(i) if i>0 else ""
+        logname = basename(__file__)+"_"+timestamp+postfix+".log"
+        if not isfile(logname):
+            break
+        i += 1
+
+    #
+    # open log
+    #
+
+    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    rootLogger = logging.getLogger()
+
+    fileHandler = logging.FileHandler(logname)
+    fileHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(fileHandler)
+
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setLevel(numeric_level)
+    consoleHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(consoleHandler)
 
     #
     # open or create output database 

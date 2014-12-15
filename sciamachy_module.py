@@ -320,8 +320,10 @@ def get_darkstateid(pet, orbit):
         # very early orbit?
         raise OrbitRangeError("orbit "+str(orbit)+" out of range")
 
-# reads extracted state executions from database
 def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
+    """ 
+    reads extracted state executions from database
+    """
 
     if in_orbitlist is None:
         if len(orbitrange) is not 2:
@@ -406,8 +408,10 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     fid.close()
     return(dict)
 
-# reads extracted state executions from database (CH8 only)
-def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False, readoutCount=False, errorInTheMean=True):
+def read_extracted_states_ch8(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False, readoutCount=False, errorInTheMean=True):
+    """
+    reads extracted state executions from database (channel 8 only)
+    """
 
     if in_orbitlist is None:
         if len(orbitrange) is not 2:
@@ -429,9 +433,9 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
         #metaindx = orbitlist = in_orbitlist
         metaindx = np.in1d(orbitlist, in_orbitlist)
     else:
-        #print('orbitrange=', orbitrange)
+        print('orbitrange=', orbitrange, "state_id", state_id)
         metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-        #print(metaindx)
+        print(np.nonzero(metaindx))
 
     if np.sum(metaindx) == 0:
         raise Exception('orbit range not present in database')
@@ -462,7 +466,9 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
         dict['orbitList'] = ds_did[metaindx]
 
     #
-    # find the pet and coadd (TODO: do for multiple orbits)
+    # find the pet and coadd 
+    # NOTE: does not work for over multiple cluster definitions, keep in mind when calling.
+    # TODO: orbitlist_in not supported
     #
 
     orbit = orbitrange[0]
@@ -475,25 +481,29 @@ def read_extracted_states_(orbitrange, state_id, calib_db, in_orbitlist=None, re
     n_defchange = orbit_start.size 
     pet = np.empty(1024)
     coadd = np.empty(1024)
-    #print("CLUSPETS=", cluspets.shape, cluspets)
     if n_defchange is 1:
         orbit_end = [100000]
     if n_defchange > 1:
         orbit_end = np.append(orbit_start[1:], 100000)
     if n_defchange is 0:
-        print("oh noes!")
-        return(dict)
+        raise Exception("Error in cluster definition")
+    clusdef_found = False
     for i_change in range(n_defchange):
-        if orbit_start[i_change] > orbit or orbit_end[i_change] < orbit:
-            continue
+        # next cluster definition if this one out of range
+        if orbit_start[i_change] > orbitrange[1] or orbit_end[i_change] < orbitrange[0]:
+            continue 
         cluspets_ = cluspets[i_change,:]
         cluscoad_ = cluscoad[i_change,:]
         for i_clus in range(3): #ch8 is last 3 clusters.. always 40 clusters
             clus_start = clusoff1[i_clus]
             clus_end   = clusoff1[i_clus+1]
-            #print(cluspets_.shape, cluspets_, orbit)
             pet[clus_start:clus_end] = cluspets_[i_clus+37]
             coadd[clus_start:clus_end] = cluscoad_[i_clus+37]
+            clusdef_found = True
+
+    if not clusdef_found:
+        raise Exception("No cluster definition found for orbit range"+str(orbitrange))
+
     dict['pet'] = pet - petcorr
     dict['coadd'] = coadd
 

@@ -11,11 +11,11 @@ import h5py
 import numpy as np
 from numpy import cos, pi
 from kapteyn import kmpfit
-import matplotlib.pyplot as plt
+import logging
 
 from ranges import remove_overlap, is_in_range, merge_ranges
 from envisat import PhaseConverter
-from sciamachy_module import petcorr, orbitfilter, get_darkstateid, read_extracted_states_, NonlinCorrector
+from sciamachy_module import petcorr, orbitfilter, get_darkstateid, read_extracted_states_ch8, NonlinCorrector
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #- globals ---------------------------------------------------------------------
@@ -36,6 +36,14 @@ def scia_dark_residuals1(p, data):
 def scia_dark_residuals1e(p, data):
     x, y, yerr = data 
     return (y - scia_dark_fun1(p, x)) / yerr
+
+# should be raised if there is a truly unexpected error in the dark fit (data looks ok, but still failed)
+class FitFailedError(Exception):
+    pass
+
+# should be raised if there is a truly unexpected error in the dark fit (data looks)
+class NotEnoughDataError(Exception):
+    pass
 
 def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=None, short=False, **kwargs):
     """
@@ -147,8 +155,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         res_phases[pixnr] = fitobj.params[4]
         res_phases2[pixnr] = fitobj.params[6]
         if (fitobj.status <= 0):
-           print('Error message = ', fitobj.message)
-           quit()
+           raise FitFailedError('Error message = '+fitobj.message)
 
     # center the negative phase shift
     idx_neg = res_phases > 0.5
@@ -274,6 +281,9 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         if set, use kappasigma filter 
     """
 
+    # minimum nr of degrees of freedom
+    min_degrees = 3
+
     #
     # get all dark data
     # 
@@ -282,7 +292,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     if ephases.size <= 2:
-        raise Exception("Not enough datapoints for fit:", ephases.size)
+        raise NotEnoughDataError("Not enough datapoints for fit: "+str(ephases.size))
 
     #
     # initialize data points (coadd is always 1 as we only do ch8 nadir)
@@ -337,7 +347,12 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         p0 = np.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        if (aos[pixnr] is not 0) and (not np.isnan(np.sum(pix_readouts))) and (x[0].size > 0):
+        idx_fin = np.isfinite(pix_readouts)
+        if np.sum(idx_fin) > min_degrees:
+            pix_readouts = pix_readouts[idx_fin]
+            pix_sigmas = pix_sigmas[idx_fin]
+            x = (ephases-orbit)[idx_fin], pet[idx_fin]
+
             #print(orbit, pixnr, p0, parinfo)
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
@@ -370,7 +385,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             print(pixnr, fitobj.message)
             print(p0, x, pix_readouts, pix_sigmas)
         if (fitobj.status <= 0):
-            raise Exception(fitobj.message)
+            raise FitFailedError(fitobj.message)
         statuses[pixnr] = fitobj.status
         res_lcs[pixnr] = fitobj.params[1]
         err_lcs[pixnr] = fitobj.stderr[1]
@@ -410,7 +425,7 @@ def read_ch8_darks(orbit_range, stateid):
     coadd : int
         co-adding factor
     """
-    states = read_extracted_states_(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
+    states = read_extracted_states_ch8(orbit_range, stateid, fname, readoutMean=True, readoutNoise=True)
     state_mtbl = states['mtbl']
     jds = state_mtbl['julianDay'][:]
     readouts = states['readoutMean']

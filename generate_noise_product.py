@@ -1,4 +1,5 @@
-from __future__ import print_function, division
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """
 generate a simple noise product from sdmf readout noise.
@@ -9,6 +10,8 @@ this generator overcomes this by taking all data belonging to the right orbit (u
 the product also takes into account the changed dark definition (OCR-43) @ orbit 43362:
 it will always have the right noise figure for the Pixel Exposure Time (PET) of choice.
 """
+
+from __future__ import print_function, division
 
 #import cPickle as pickle # python 2 speed-up
 import pickle
@@ -132,11 +135,20 @@ class Noise:
         f = h5py.File(fname, "a")
         grpn = self.get_groupname()
         n_dset = f.create_dataset(grpn+"/noise", self.noise.shape, dtype='f')
+        n_dset.attrs["long_name"] = np.string_("Noise figures per orbit per pixel, for one pixel exposure time.")
+        n_dset.attrs["units"] = np.string_("BU")
+        n_dset.attrs["description"] = np.string_("Noise figures")
         n_dset[:,:] = self.noise
         c_dset = f.create_dataset(grpn+"/count", self.meas_count.shape, dtype='i')
+        c_dset.attrs["long_name"] = np.string_("Number of measurements used for noise figures (per orbit per pixel).")
+        c_dset.attrs["units"] = np.string_("-")
+        c_dset.attrs["description"] = np.string_("Number of measurements used.")
         c_dset[:,:] = self.meas_count
         o_dset = f.create_dataset(grpn+"/orbits", self.orbits.shape, dtype='i')
         o_dset[:] = self.orbits
+        o_dset.attrs["long_name"] = np.string_("Absolute orbit numbers.")
+        o_dset.attrs["units"] = np.string_("-")
+        o_dset.attrs["description"] = np.string_("Absolute orbit numbers.")
         f.close()
 
     def load_hdf5(self, fname):

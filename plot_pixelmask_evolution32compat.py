@@ -22,7 +22,7 @@ import distinct_colours
 
 class PlotPixelmaskEvolution():
     """
-    class that plots evolution of pixel masks (SDMF3.1) per detector channel.
+    class that plots evolution of pixel masks (SDMF3.2) for channel 8.
     uses Viewer class to do the actual visualisation. uses config file and handles
     command-line arguments.
     """
