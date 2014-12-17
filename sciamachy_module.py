@@ -408,9 +408,39 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
     fid.close()
     return(dict)
 
-def read_extracted_states_ch8(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False, readoutCount=False, errorInTheMean=True):
+def read_extracted_states_ch8(orbitrange, state_id, calib_db, 
+                              in_orbitlist=None, readoutMean=False, readoutNoise=False, 
+                              orbitList=False, readoutCount=False, errorInTheMean=True):
     """
     reads extracted state executions from database (channel 8 only)
+
+    Parameters
+    ----------
+
+    orbitrange : list or tuple of 2 ints 
+        start orbit and end orbit
+    state_id : int
+        state id
+    calib_db : string
+        file name of sdmf calibration database
+    in_orbitlist : list, optional
+        list of orbits, may be specified to replace `orbitrange'
+    readoutMean : boolean, optional
+        if set, returns readouts. "readoutMean" in returned dict.
+    readoutNoise : boolean, optional
+        if set, returns readout noise. "readoutNoise" in returned dict. 
+    orbitList : boolean, optional
+        if set, returns orbit list. "orbitList" in returned dict. 
+    readoutCount : boolean, optional
+        if set, returns readout counts. "readoutCount" in returned dict. 
+    errorInTheMean : boolean, optional
+        if set, returns error-in-the-mean in place of noise
+
+    Returns
+    -------
+
+    dict with keys "mtbl" (meta table), "orbit_range" (orbit range), pet" (Pixel Exposure Time), "coadd" (co-adding factor), 
+    and optionally "readoutMean", "readoutNoise", "orbitList", "readoutCount"
     """
 
     if in_orbitlist is None:
@@ -430,12 +460,11 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db, in_orbitlist=None,
     mt_did = gid['metaTable']
     orbitlist = (gid['orbitList'])[:]
     if in_orbitlist is not None:
-        #metaindx = orbitlist = in_orbitlist
         metaindx = np.in1d(orbitlist, in_orbitlist)
     else:
-        print('orbitrange=', orbitrange, "state_id", state_id)
+        #print('orbitrange=', orbitrange, "state_id", state_id)
         metaindx = (orbitlist >= orbitrange[0]) & (orbitlist <= orbitrange[1])
-        print(np.nonzero(metaindx))
+        #print(np.nonzero(metaindx))
 
     if np.sum(metaindx) == 0:
         raise Exception('orbit range not present in database')
@@ -467,7 +496,7 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db, in_orbitlist=None,
 
     #
     # find the pet and coadd 
-    # NOTE: does not work for over multiple cluster definitions, keep in mind when calling.
+    # NOTE: when dealing with multiple cluster definitions, it takes the last one..
     # TODO: orbitlist_in not supported
     #
 

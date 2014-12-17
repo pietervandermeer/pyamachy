@@ -45,7 +45,7 @@ class FitFailedError(Exception):
 class NotEnoughDataError(Exception):
     pass
 
-def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=None, short=False, **kwargs):
+def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=None, short=False, give_errors=False, **kwargs):
     """
     fit dark model to two neighbouring monthly calibration orbits
 
@@ -57,15 +57,17 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     orbit : int
         absolute orbit number
     verbose : bool, optional
-        if set, provide verbose output
+        if True, provide verbose output
+    give_errors: bool, optional
+        if True, return errors of fit parameters
     kappasigma : bool, optional
-        if set, use kappasigma filter 
+        if True, use kappasigma filter 
     """
 
     # minimum nr of degrees of freedom
     min_degrees = 8
 
-    orbit_range = orbit-.5, orbit+2.5
+    orbit_range = orbit-2., orbit+2.
     if verbose:
         print(orbit_range)
 
@@ -163,8 +165,10 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     idx_neg = res_phases2 > 0.5
     res_phases2[idx_neg] -= 0.5
     # compute channel phase shift
-    channel_phase1 = np.median(res_phases[np.where(statuses > 0)] ) % 1
-    channel_phase2 = np.median(res_phases2[np.where(statuses > 0)] ) % 1
+    channel_phase1 = np.median(res_phases) % 1
+    channel_phase2 = np.median(res_phases2) % 1
+    np.sort(res_phases)
+
     if verbose:
         print('channel median phase =', channel_phase1, channel_phase2)
     phase1info = dict(fixed=True, limits=[-3.,+3.])
@@ -182,6 +186,13 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     amps = np.zeros(n_pix)
     amps2 = np.zeros(n_pix)
     trends = np.zeros(n_pix)
+    err_aos = np.zeros(n_pix)
+    err_lcs = np.zeros(n_pix)
+    err_amps = np.zeros(n_pix)
+    err_amps2 = np.zeros(n_pix)
+    err_phase1 = np.zeros(n_pix)
+    err_trends = np.zeros(n_pix)
+    err_phase2 = np.zeros(n_pix)
     statuses = np.zeros(n_pix)
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
@@ -231,6 +242,13 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
+        err_aos[pixnr] = fitobj.xerror[0]
+        err_lcs[pixnr] = fitobj.xerror[1]
+        err_amps[pixnr] = fitobj.xerror[2]
+        err_trends[pixnr] = fitobj.xerror[3]
+        err_phase1[pixnr] = fitobj.xerror[4]
+        err_amps2[pixnr] = fitobj.xerror[5]
+        err_phase2[pixnr] = fitobj.xerror[6]
 
     channel_amp2 = np.median(amps2[np.where(statuses > 0)])
 
@@ -246,7 +264,17 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         plt.legend(loc="best")
         plt.show()
 
-    return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
+    if give_errors:
+        errors = {"aos":err_aos, 
+                  "off":err_lcs, 
+                  "amps":err_amps, 
+                  "amps2":np.median(err_amps2), 
+                  "phase1":np.median(err_phase1), 
+                  "phase2":np.median(err_phase2), 
+                  "trends":err_trends}
+        return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends, errors
+    else:
+        return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
 
 def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift, channel_phaseshift2, 
                       give_errors=False, verbose=False, short=False, kappasigma=False, **kwargs):
@@ -288,7 +316,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     # get all dark data
     # 
 
-    orbit_range = orbit, orbit+2
+    orbit_range = orbit-1.25, orbit+1.25
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     if ephases.size <= 2:
@@ -672,7 +700,7 @@ if __name__ == "__main__":
 
     ad = AllDarks([0.125, 0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=489, short=False)
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=489, short=False, give_errors=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends = ret 
 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]

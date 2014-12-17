@@ -26,7 +26,7 @@
 #
 
 """
-Perform calibration on Sciamachy State 62 data.
+Perform calibration and averaging on Sciamachy State 62 data.
 """
 
 from __future__ import print_function
@@ -48,7 +48,7 @@ import config32
 
 #-------------------------SECTION VERSION-----------------------------------
 _swVersion = {'major': 0,
-              'minor': 8,
+              'minor': 9,
               'revision' : 4}
 _calibVersion = {'major': 1,
                  'minor': 1,
@@ -56,6 +56,9 @@ _calibVersion = {'major': 1,
 _dbVersion = {'major': 0,
               'minor': 9,
               'revision' : 3}
+_sdmfVersion = {'major': 3,
+                'minor': 2,
+                'revision' : 0}
 
 #-------------------------SECTION ERROR CLASSES-----------------------------
 class dbError(Exception):
@@ -1120,6 +1123,10 @@ class SMRdb:
             if fid.attrs['darkVersion'] != self.darkVersion:
                 print( 'Fatal:', 'incompatible dark version', fid.attrs['darkVersion'], "vs", self.darkVersion )
                 raise dbError('incompatible dark version')
+            myversion = '%(major)d.%(minor)d' % _sdmfVersion
+            if fid.attrs['sdmfVersion'].rsplit('.',1)[0] != myversion:
+                print( 'Fatal:', 'incompatible with _sdmfVersion' )
+                raise dbError('incompatible with _sdmfVersion')
             myversion = '%(major)d.%(minor)d' % _swVersion
             if fid.attrs['swVersion'].rsplit('.',1)[0] != myversion:
                 print( 'Fatal:', 'incompatible with _swVersion' )
@@ -1212,6 +1219,8 @@ class SMRdb:
             mystr = ','.join(list(self.calibration.astype('str')))
             fid.attrs['calibOptions'] = mystr
             fid.attrs['darkVersion'] = self.darkVersion
+            fid.attrs['sdmfVersion'] = \
+                '%(major)d.%(minor)d.%(revision)d' % _sdmfVersion
             fid.attrs['swVersion'] = \
                 '%(major)d.%(minor)d.%(revision)d' % _swVersion
             fid.attrs['dbVersion'] = \

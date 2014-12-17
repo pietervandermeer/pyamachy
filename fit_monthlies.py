@@ -26,6 +26,9 @@ last_orbit = 55000
 #-- functions ------------------------------------------------------------------
 
 def is_blacklisted(orbit):
+    """
+    Unfittable monthly calibration orbits -> ditch 'em!
+    """
     return (orbit == 2216) or (orbit == 3921)
 
 def no_monthly(orbit, old_monthly, last_orbit):
@@ -56,10 +59,15 @@ def fit_monthlies(db_out_name, short=False):
     f = h5py.File(db_out_name, "w")
     orblist = f.create_dataset("orbits", (n_monthlies,), dtype='i')
     aos_dset = f.create_dataset("aos", (n_monthlies,n_pix), dtype='f')
-    lcs_dset = f.create_dataset("lcs", (n_monthlies,n_pix), dtype='f')
+    off_dset = f.create_dataset("off", (n_monthlies,n_pix), dtype='f')
     amps_dset = f.create_dataset("amps", (n_monthlies,n_pix), dtype='f')
     phase_dset = f.create_dataset("channel_phase", (n_monthlies,2), dtype = 'f')
     amp2_dset = f.create_dataset("amp2", (n_monthlies,), dtype='f')
+    err_aos_dset = f.create_dataset("err_aos", (n_monthlies,n_pix), dtype='f')
+    err_off_dset = f.create_dataset("err_off", (n_monthlies,n_pix), dtype='f')
+    err_amps_dset = f.create_dataset("err_amps", (n_monthlies,n_pix), dtype='f')
+    err_phase_dset = f.create_dataset("err_channel_phase", (n_monthlies,2), dtype = 'f')
+    err_amp2_dset = f.create_dataset("err_amp2", (n_monthlies,), dtype='f')
 
     old_monthly = ofilt.get_next_monthly(first_orbit)
     i_monthly = 0
@@ -70,12 +78,17 @@ def fit_monthlies(db_out_name, short=False):
         if not is_blacklisted(monthly):
             # compute monthly fit, to obtain analog offset
             print("compute monthly fit:", monthly, "..")
-            channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends = fit_monthly(ad, monthly, short=short)
+            channel_phase1, channel_phase2, aos, off, amps, channel_amp2, trends, errors = fit_monthly(ad, monthly, short=short, give_errors=True)
             aos_dset[i_monthly,:] = aos
-            lcs_dset[i_monthly,:] = lcs
+            off_dset[i_monthly,:] = off
             amps_dset[i_monthly,:] = amps
             phase_dset[i_monthly,:] = np.array([channel_phase1, channel_phase2])
             amp2_dset[i_monthly] = channel_amp2
+            err_aos_dset[i_monthly,:] = errors["aos"]
+            err_off_dset[i_monthly,:] = errors["off"]
+            err_amps_dset[i_monthly,:] = errors["amps"]
+            err_phase_dset[i_monthly,:] = np.array([errors["phase1"],errors["phase2"]])
+            err_amp2_dset[i_monthly] = errors["amps2"]
             orblist[i_monthly] = monthly
             i_monthly += 1
         old_monthly = monthly

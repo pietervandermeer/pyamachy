@@ -20,7 +20,29 @@ from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 from sciamachy_module import get_darkstateid, petcorr, n_chanpix
 from vardark_module import AllDarks, trending_phase, fit_eclipse_orbit, FitFailedError, NotEnoughDataError
 
+#-- versions -------------------------------------------------------------------
+
+# version of this python program
+_swVersion = {'major': 1,
+              'minor': 0,
+              'revision' : 0}
+# non-linearity correction could change in the future..
+_calibVersion = {'major': 1,
+                 'minor': 0,
+                 'revision' : 0}
+# database version
+_dbVersion = {'major': 1,
+              'minor': 0,
+              'revision' : 0}
+# SDMF 3.2.0. may possibly change with 
+_sdmfVersion = {'major': 3,
+                'minor': 2,
+                'revision' : 0}
+
 #-- functions ------------------------------------------------------------------
+
+class dbError(Exception):
+    pass
 
 class VarDarkdb:
     '''
@@ -104,6 +126,19 @@ class VarDarkdb:
         dset.attrs['units'] = np.string_("sqrt(BU)")
         dset.attrs['description'] = np.string_("Number of data points used per orbit to compute fit.")
 
+        self.write_version_attrs()
+
+        return
+
+    def write_version_attrs(self):
+        self.fid.attrs['sdmfVersion'] = \
+            '%(major)d.%(minor)d.%(revision)d' % _sdmfVersion
+        self.fid.attrs['swVersion'] = \
+            '%(major)d.%(minor)d.%(revision)d' % _swVersion
+        self.fid.attrs['dbVersion'] = \
+            '%(major)d.%(minor)d.%(revision)d' % _dbVersion
+        self.fid.attrs['calibVersion'] = \
+            '%(major)d.%(minor)d.%(revision)d' % _calibVersion
         return
 
     def open(self, h5_name, sz_phase=50, sz_channel=1024, use_trendfit=False, short_pet=False):
@@ -149,6 +184,12 @@ class VarDarkdb:
         if n_phase != sz_phase:
             raise Exception("nr of phases does not match between user-specified and existing database!")
 
+        #
+        # check db and sw versions of existing database
+        #
+
+        self.check_version()
+
         return
 
     def __init__( self, h5_name, **kwargs):
@@ -167,6 +208,33 @@ class VarDarkdb:
 
         self.open(h5_name, **kwargs)
 
+        return
+
+    def check_version(self):
+        """
+        Check database version (SDMF, software, database, calibration data versions should match)
+
+        Raises
+        ------
+
+        dbError : when one or more of the versions do not match
+        """
+        myversion = '%(major)d.%(minor)d' % _sdmfVersion
+        if self.fid.attrs['sdmfVersion'].rsplit('.',1)[0] != myversion:
+            print( 'Fatal:', 'incompatible with _sdmfVersion' )
+            raise dbError('incompatible with _sdmfVersion')
+        myversion = '%(major)d.%(minor)d' % _swVersion
+        if self.fid.attrs['swVersion'].rsplit('.',1)[0] != myversion:
+            print( 'Fatal:', 'incompatible with _swVersion' )
+            raise dbError('incompatible with _swVersion')
+        myversion = '%(major)d.%(minor)d' % _dbVersion
+        if self.fid.attrs['dbVersion'].rsplit('.',1)[0] != myversion:
+            print( 'Fatal:', 'incompatible with _dbVersion' )
+            raise dbError('incompatible with _dbVersion')
+        myversion = '%(major)d.%(minor)d' % _calibVersion
+        if self.fid.attrs['calibVersion'].rsplit('.',1)[0] != myversion:
+            print( 'Fatal:', 'incompatible with _calibVersion' )
+            raise dbError('incompatible with _calibVersion')
         return
 
     def new_entry( self, orbit ):
