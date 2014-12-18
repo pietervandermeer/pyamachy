@@ -242,13 +242,13 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
-        err_aos[pixnr] = fitobj.xerror[0]
-        err_lcs[pixnr] = fitobj.xerror[1]
-        err_amps[pixnr] = fitobj.xerror[2]
-        err_trends[pixnr] = fitobj.xerror[3]
-        err_phase1[pixnr] = fitobj.xerror[4]
-        err_amps2[pixnr] = fitobj.xerror[5]
-        err_phase2[pixnr] = fitobj.xerror[6]
+        err_aos[pixnr] = fitobj.stderr[0]
+        err_lcs[pixnr] = fitobj.stderr[1]
+        err_amps[pixnr] = fitobj.stderr[2]
+        err_trends[pixnr] = fitobj.stderr[3]
+        err_phase1[pixnr] = fitobj.stderr[4]
+        err_amps2[pixnr] = fitobj.stderr[5]
+        err_phase2[pixnr] = fitobj.stderr[6]
 
     channel_amp2 = np.median(amps2[np.where(statuses > 0)])
 
@@ -292,7 +292,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     aos : numpy array, 1024 floats 
         analog offset per pixel for this orbit
     lcs : numpy array, 1024 floats 
-        leakage current (constant part) per pixel for this orbit
+        dark current (constant part) per pixel for this orbit
     amps : numpy array, 1024 floats 
         orbital variation amplitude per pixel for this orbit
     channel_amp2 : float

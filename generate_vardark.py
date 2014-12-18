@@ -9,6 +9,7 @@ Uses interpolated_monthlies.h5.
 from __future__ import print_function, division
 
 import numpy as np
+from numpy import cos,sin,pi
 import h5py
 import matplotlib.pyplot as plt
 import warnings
@@ -77,6 +78,7 @@ class VarDarkdb:
         #
         # define dimensions and datasets in HDF5 file
         #
+
         pixels = np.arange( self.channel_sz, dtype='u2' )
         dset = self.fid.create_dataset( 'dim_pixel', data=pixels )
         dset.dims.create_scale( self.fid['dim_pixel'], 
@@ -98,9 +100,10 @@ class VarDarkdb:
         chunks = (1, self.ds_phase.size, self.ds_pixel.size,)
         creshape = (0, self.ds_phase.size, self.ds_pixel.size)
         maxshape = (None, self.ds_phase.size, self.ds_pixel.size,)
+
         dset = self.fid.create_dataset( "varDark", creshape,
                                         maxshape=maxshape, 
-                                        dtype="f") #, chunks=chunks ) # chunking disabled as current libraries give deprecation error
+                                        dtype=np.float64) #, chunks=chunks ) # chunking disabled as current libraries give deprecation error
         dset.dims[0].attach_scale( self.fid['dim_orbit'] )
         dset.dims[0].label = 'absolute orbit number'
         dset.dims[1].attach_scale( self.fid['dim_phase'] )
@@ -109,22 +112,32 @@ class VarDarkdb:
         dset.dims[2].label = 'pixel ID'
         dset.attrs['long_name'] = np.string_("variable dark (channel 8)")
         dset.attrs['units'] = np.string_("BU/s")
-        dset.attrs['description'] = \
-            np.string_("SCIA variable dark signal of channel 8")
+        dset.attrs['description'] = np.string_("SCIA variable dark signal of channel 8")
         self.ds_vdark = dset
 
-        self.ds_err_dcs = self.fid.create_dataset("errorDCs", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
-        self.ds_err_trends = self.fid.create_dataset("errorTrends", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
+        self.ds_err_ds = self.fid.create_dataset("errorVarDark", creshape, maxshape=maxshape, dtype=np.float64)
+        dset = self.ds_err_ds
+        dset.dims[0].attach_scale( self.fid['dim_orbit'] )
+        dset.dims[0].label = 'absolute orbit number'
+        dset.dims[1].attach_scale( self.fid['dim_phase'] )
+        dset.dims[1].label = 'orbit phase (eclipse)'
+        dset.dims[2].attach_scale( self.fid['dim_pixel'] )
+        dset.dims[2].label = 'pixel ID'
+        dset.attrs['long_name'] = np.string_("Dark signal error (channel 8)")
+        dset.attrs['units'] = np.string_("BU/s")
+        dset.attrs['description'] = np.string_("Error in the dark signal of SCIA channel 8.")
+
         self.ds_datapoint_counts = self.fid.create_dataset("dataPointCounts", (0,), maxshape=(None,), dtype=np.int16)
         dset = self.ds_datapoint_counts
         dset.attrs['long_name'] = np.string_("Fit datapoints (channel 8)")
-        dset.attrs['units'] = np.string_("-")
+        dset.attrs['units'] = np.string_("")
         dset.attrs['description'] = np.string_("Number of data points used per orbit to compute fit.")
+
         self.ds_uncertainties = self.fid.create_dataset("uncertainties", (0,sz_channel), maxshape=(None,sz_channel), dtype=np.float64)
         dset = self.ds_uncertainties
-        dset.attrs['long_name'] = np.string_("Standard deviation of fit residual per orbit per pixel. Used as a measure of uncertainty.")
+        dset.attrs['long_name'] = np.string_("Stddev of fit residual, channel 8.")
         dset.attrs['units'] = np.string_("sqrt(BU)")
-        dset.attrs['description'] = np.string_("Number of data points used per orbit to compute fit.")
+        dset.attrs['description'] = np.string_("Standard deviation of fit residual per orbit per pixel. Used as a measure of uncertainty. SCIA channel 8.")
 
         self.write_version_attrs()
 
@@ -247,7 +260,7 @@ class VarDarkdb:
         else:
             return True
 
-    def replace(self, orbit, vdark, err_trends=None, err_dcs=None, datapoint_count=None, uncertainties=None):
+    def replace(self, orbit, vdark, err_ds=None, datapoint_count=None, uncertainties=None):
         '''
         Replace variable dark values in database
         '''
@@ -257,16 +270,14 @@ class VarDarkdb:
             return
 
         self.ds_vdark[indx,:,:] = vdark
-        if err_trends is not None:
-            self.ds_err_trends[indx,:] = err_trends
         if err_dcs is not None:
-            self.ds_err_dcs[indx,:] = err_dcs
+            self.ds_err_ds[indx,:] = err_ds
         if datapoint_count is not None:
             self.ds_datapoint_counts[indx[0][0]] = datapoint_count
         if uncertainties is not None:
             self.ds_uncertainties[indx,:] = uncertainties
 
-    def append(self, orbit, vdark, err_trends=None, err_dcs=None, datapoint_count=None, uncertainties=None):
+    def append(self, orbit, vdark, err_ds=None, datapoint_count=None, uncertainties=None):
         '''
         Append new variable dark values in database
         '''
@@ -274,12 +285,10 @@ class VarDarkdb:
         self.ds_orbit[self.n_write] = orbit
         self.ds_vdark.resize( self.n_write+1, axis=0 )
         self.ds_vdark[self.n_write,:,:] = vdark
-        if err_trends is not None:
-            self.ds_err_trends.resize( self.n_write+1, axis=0 )
-            self.ds_err_trends[self.n_write,:] = err_trends
-        if err_dcs is not None:
-            self.ds_err_dcs.resize( self.n_write+1, axis=0 )
-            self.ds_err_dcs[self.n_write,:] = err_dcs
+        if err_ds is not None:
+            self.ds_err_ds.resize( self.n_write+1, axis=0 )
+            print(err_ds.shape)
+            self.ds_err_ds[self.n_write,:] = err_ds
         if datapoint_count is not None:
             self.ds_datapoint_counts.resize((self.n_write+1,))
             self.ds_datapoint_counts[self.n_write] = datapoint_count
@@ -337,6 +346,9 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     inter_amps = fin["amps"]
     inter_phases = fin["phases"]
     inter_amp2 = fin["amp2"]
+    inter_err_amps = fin["err_amps"]
+    inter_err_phases = fin["err_phases"]
+    inter_err_amp2 = fin["err_amp2"]
 
     #
     # handle orbit range
@@ -414,21 +426,21 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     i_orbit = 0
     avg_phi = 0.
     xt = np.array([trending_phase]) # trending_phase
-    dcs = np.ones(n_pix) * 5000 # initial guess for dark current. 5000 BU/s is a good average
+    dcs = np.ones(n_pix) * 5000 # initial guess for dark current offset. 5000 BU/s is a good average
     orbrange = range(int(np.min(ephases)), int(np.max(ephases)))
     n_tpts = len(orbrange)
     # TODO: put phi, orbit, y, err_lc, err_trend, uncertainties into dict.. otherwise too much of a hassle when sorting or filtering
     trending_phis = np.empty(n_tpts)
     trending_orbits = np.empty(n_tpts)
     trending_ys = np.empty([n_tpts, n_pix])
-    err_dcs = np.empty([n_tpts, n_pix])
-    err_trends = np.empty([n_tpts, n_pix])
+    err_dcs = np.empty([n_tpts, n_pix]) # error in dc offset parameter
+    err_trends = np.empty([n_tpts, n_pix]) # error in trend parameter
     datapoint_count = np.empty([n_orbits_in]) # may be used for quality estimation (2 or less datapoints will make a fit impossible, even)
     uncertainties = np.empty([n_tpts, n_pix])
 
     for orbit in orbrange:
         print(orbit)
-        # use least-means fit to find dc and trend. slower, but more accurate. 
+        # use least-means fit to find dc and trend. slow, but accurate. 
         # this works because all parameters are now fixed except lc and trend. 
         idx = in_orblist[:] == orbit
         if np.sum(idx) > 0:
@@ -547,18 +559,39 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         if pixnr is not None:
             p = aos[pixnr], dcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
             wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
-            full_wave[idx] = wave_ + f(xnew_) # add interpolated lc offset (daily+seasonal variation)
+            full_wave[idx] = wave_ + f(xnew_) # add interpolated dc offset (daily+seasonal variation)
         else:
             for i_pix in range(n_pix):
                 p = aos[i_pix], dcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
                 wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
                 wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
             #print(xnew_)
+
+            # compute dc error per bin
+            err_dc = err_dcs[i_trend,:] 
+            err_trend = err_trends[i_trend,:] 
+            err_a1 = inter_err_amps[i_orbit,:]
+            err_phi1, err_phi2 = inter_err_phases[i_orbit,:]
+            err_a2 = inter_err_amp2[i_orbit]
+            a1 = inter_amps[i_orbit,:]
+            a2 = inter_amp2[i_orbit]
+            phi1 = inter_phases[i_orbit,0]
+            phi2 = inter_phases[i_orbit,1]
+            err_ds = np.empty([pts_per_orbit+1, n_pix], dtype=np.float64)
+            for i in range(pts_per_orbit+1):
+                phi = float(i) / pts_per_orbit
+                err_ds[i,:] = err_dc**2 \
+                            + err_a1**2 * (cos(2*pi*(phi1+phi)) + a2*(cos(4*pi*(phi2+phi))))**2 \
+                            + err_phi1**2 * (2*pi*a1*sin(phi1+phi))**2 \
+                            + err_a2**2 * (a1*cos(4*pi*(phi2+phi)))**2 \
+                            + err_phi2**2 * (a1*a2*sin(4*pi*(phi2+phi)))**2 \
+                            + err_trend**2 * phi**2
+
             wave[:, :] += f(xnew_)
             if i_trend >= 0:
-                vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:])
+                vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:], err_ds=err_ds)
             else:
-                vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties)
+                vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties, err_ds=err_ds)
         i += 1
 
     fin.close() # close interpolated monthlies database, won't be needing it anymore
