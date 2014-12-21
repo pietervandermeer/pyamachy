@@ -411,11 +411,13 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         i_orbit += 1
         m += n
     dark_current /= np.matrix(pets).T * np.ones(n_pix)
+    noise /= np.matrix(pets).T * np.ones(n_pix)
     print("done.")
 
     if pixnr is not None:
         plot_x = ephases
         plot_y = dark_current[:,pixnr]
+        plot_yerr = noise[:,pixnr]
 
     #
     # determine trending point for each orbit (including the extended borders)
@@ -535,6 +537,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     xt = np.array([phi_t]) # trending_phase
     wave = np.empty([pts_per_orbit+1, n_pix])
     full_wave = np.empty(xnew.size)
+    full_err_ds = np.empty(xnew.size)
     out_orblist = np.array([], dtype=np.int32)
 
     i = 0
@@ -554,38 +557,41 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         channel_phase1 = inter_phases[i_orbit,0]
         channel_phase2 = inter_phases[i_orbit,1]
         channel_amp2 = inter_amp2[i_orbit]
-        idx = (xnewi == orbit) | (xnew == (orbit+1)) # current orbit and first point in the new orbit (easier for data user)
-        xnew_ = xnew[idx]
+
+        # compute dc error per bin (using propagation of fit parameter errors)
+        err_dc = err_dcs[i_trend,:] 
+        err_trend = err_trends[i_trend,:] 
+        err_a1 = inter_err_amps[i_orbit,:]
+        err_phi1 = inter_err_phases[i_orbit,:,0]
+        err_phi2 = inter_err_phases[i_orbit,:,1]
+        err_a2 = inter_err_amp2[i_orbit,:]
+        a1 = inter_amps[i_orbit,:]
+        a2 = inter_amp2[i_orbit]
+        phi1 = inter_phases[i_orbit,0]
+        phi2 = inter_phases[i_orbit,1]
+        err_ds = np.empty([pts_per_orbit+1, n_pix], dtype=np.float64)
+        for i in range(pts_per_orbit+1):
+            phi = float(i) / pts_per_orbit
+            err_ds[i,:] = err_dc**2 \
+                        + err_a1**2 * (cos(2*pi*(phi1+phi)) + a2*(cos(4*pi*(phi2+phi))))**2 \
+                        + err_phi1**2 * (2*pi*a1*sin(phi1+phi))**2 \
+                        + err_a2**2 * (a1*cos(4*pi*(phi2+phi)))**2 \
+                        + err_phi2**2 * (a1*a2*sin(4*pi*(phi2+phi)))**2 \
+                        + err_trend**2 * phi**2
+
         if pixnr is not None:
+            idx = (xnewi == orbit) | (xnew == (orbit+1)) # current orbit and first point in the new orbit (easier for data user)
+            xnew_ = xnew[idx]
             p = aos[pixnr], dcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
             wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
             full_wave[idx] = wave_ + f(xnew_) # add interpolated dc offset (daily+seasonal variation)
+            full_err_ds[idx] = err_ds[:,pixnr]
         else:
             for i_pix in range(n_pix):
                 p = aos[i_pix], dcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
                 wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
                 wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
             #print(xnew_)
-
-            # compute dc error per bin (using propagation of fit parameter errors)
-            err_dc = err_dcs[i_trend,:] 
-            err_trend = err_trends[i_trend,:] 
-            err_a1 = inter_err_amps[i_orbit,:]
-            err_phi1, err_phi2 = inter_err_phases[i_orbit,:]
-            err_a2 = inter_err_amp2[i_orbit]
-            a1 = inter_amps[i_orbit,:]
-            a2 = inter_amp2[i_orbit]
-            phi1 = inter_phases[i_orbit,0]
-            phi2 = inter_phases[i_orbit,1]
-            err_ds = np.empty([pts_per_orbit+1, n_pix], dtype=np.float64)
-            for i in range(pts_per_orbit+1):
-                phi = float(i) / pts_per_orbit
-                err_ds[i,:] = err_dc**2 \
-                            + err_a1**2 * (cos(2*pi*(phi1+phi)) + a2*(cos(4*pi*(phi2+phi))))**2 \
-                            + err_phi1**2 * (2*pi*a1*sin(phi1+phi))**2 \
-                            + err_a2**2 * (a1*cos(4*pi*(phi2+phi)))**2 \
-                            + err_phi2**2 * (a1*a2*sin(4*pi*(phi2+phi)))**2 \
-                            + err_trend**2 * phi**2
 
             wave[:, :] += f(xnew_)
             if i_trend >= 0:
@@ -609,8 +615,14 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         plt.title("Variable dark current for pixel "+str(pixnr)+", ch8")
         plt.xlabel("Orbit number")
         plt.ylabel("Dark current (BU/s)")
-        plt.plot(plot_x,plot_y,'v', trending_phis, trending_ys[:,pixnr], 'o',xnew,f(xnew),'-', xnew, f2(xnew),'--', xnew, full_wave,'-')
-        plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct'], loc='best')
+        plt.errorbar(plot_x, plot_y, yerr=plot_yerr, fmt='bo')
+        plt.plot(trending_phis, trending_ys[:,pixnr], 'ro', 
+                 xnew, f(xnew), '-', 
+                 xnew, f2(xnew), '--')
+        plt.plot(xnew, full_wave, 'g-', lw=2)
+        plt.plot(xnew, full_wave+full_err_ds, 'g-', lw=1)
+        plt.plot(xnew, full_wave-full_err_ds, 'g-', lw=1)
+        plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct', 'rec upper', 'rec lower'], loc='best')
         plt.show()
 
     return

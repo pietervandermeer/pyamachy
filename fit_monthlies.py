@@ -66,8 +66,8 @@ def fit_monthlies(db_out_name, short=False):
     err_aos_dset = f.create_dataset("err_aos", (n_monthlies,n_pix), dtype='f')
     err_off_dset = f.create_dataset("err_off", (n_monthlies,n_pix), dtype='f')
     err_amps_dset = f.create_dataset("err_amps", (n_monthlies,n_pix), dtype='f')
-    err_phase_dset = f.create_dataset("err_channel_phase", (n_monthlies,2), dtype = 'f')
-    err_amp2_dset = f.create_dataset("err_amp2", (n_monthlies,), dtype='f')
+    err_phase_dset = f.create_dataset("err_channel_phase", (n_monthlies,n_pix,2), dtype = 'f')
+    err_amp2_dset = f.create_dataset("err_amp2", (n_monthlies,n_pix), dtype='f')
 
     old_monthly = ofilt.get_next_monthly(first_orbit)
     i_monthly = 0
@@ -87,8 +87,9 @@ def fit_monthlies(db_out_name, short=False):
             err_aos_dset[i_monthly,:] = errors["aos"]
             err_off_dset[i_monthly,:] = errors["off"]
             err_amps_dset[i_monthly,:] = errors["amps"]
-            err_phase_dset[i_monthly,:] = np.array([errors["phase1"],errors["phase2"]])
-            err_amp2_dset[i_monthly] = errors["amps2"]
+            err_phase_dset[i_monthly,:,0] = errors["phase1"]
+            err_phase_dset[i_monthly,:,1] = errors["phase2"]
+            err_amp2_dset[i_monthly,:] = errors["amps2"]
             orblist[i_monthly] = monthly
             i_monthly += 1
         old_monthly = monthly

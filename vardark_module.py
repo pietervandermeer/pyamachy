@@ -262,6 +262,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         err_ds = np.sqrt(err_ds)
 
         plt.cla()
+        plt.suptitle("vardark of pixel "+str(debug_pixnr));
         p = aos[debug_pixnr], lcs[debug_pixnr], amps[debug_pixnr], trends[debug_pixnr], channel_phase1, amps2[debug_pixnr], channel_phase2
         plt.errorbar(ephases-orbit, all_readouts[:,debug_pixnr], yerr=all_sigmas[:,debug_pixnr], fmt='bo', label="data")
         x = x_bins, np.array((0.5-petcorr) + np.zeros(n_bins))
@@ -279,19 +280,16 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         plt.plot(x_bins, model, 'g-', label="model")
         plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
         plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
-        #plt.legend(loc="best")
         plt.show()
 
     if give_errors:
         errors = {"aos":err_aos, 
                   "off":err_lcs, 
                   "amps":err_amps, 
-                  "amps2":np.median(err_amps2), 
-                  "phase1":np.median(err_phase1), 
-                  "phase2":np.median(err_phase2), 
+                  "amps2":err_amps2, 
+                  "phase1":err_phase1, 
+                  "phase2":err_phase2, 
                   "trends":err_trends}
-        if verbose:
-            print(errors)
         return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends, errors
     else:
         return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
@@ -360,11 +358,11 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     #
 
     # note the limits are just slightly wider than in the monthly fit. we do this to get rid of float32->float64 conversion errors!
-    aoinfo = dict(fixed=True, limits=[-0.1,11000.1])
+    aoinfo = dict(fixed=True, limits=[-0.1,10000.1])
     dcinfo = dict(fixed=False, limits=[-10000.1,+500000.1])
-    amp1info = dict(fixed=True, limits=[-1000.1,+1000.1])
-    trendinfo = dict(fixed=False, limits=[-1000.1,+1000.1])
-    amp2info = dict(fixed=True, limits=[-1.01,+1.01])
+    amp1info = dict(fixed=True, limits=[-200.1,+200.1])
+    trendinfo = dict(fixed=False, limits=[-100.1,+100.1])
+    amp2info = dict(fixed=True, limits=[-.41,+.41])
     phase1info = dict(fixed=True, limits=[-3.01,+3.01])
     phase2info = dict(fixed=True, limits=[-3.01,+3.01])
     parinfo = [aoinfo,dcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info] 
@@ -401,7 +399,6 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             pix_sigmas = pix_sigmas[idx_fin]
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
 
-            #print(orbit, pixnr, p0, parinfo)
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
                 pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
@@ -744,11 +741,13 @@ if __name__ == "__main__":
     err_amp = errors["amps"] 
     err_phase1 = errors["phase1"] 
     err_amp2 = errors["amps2"] 
+    err_phase2 = errors["phase2"] 
     for pixnr in range(1024):
         print(pixnr)
         print("dc off:", dcs[pixnr], err_off[pixnr])
         print("ao:", aos[pixnr], err_ao[pixnr])
         print("amp1:", amps[pixnr], err_amp[pixnr])
-        print("phase1:", channel_phase1, err_phase1)
-        print("amp2:", channel_amp2, err_amp2)
+        print("phase1:", channel_phase1, err_phase1[pixnr])
+        print("phase2:", channel_phase2, err_phase2[pixnr])
+        print("amp2:", channel_amp2, err_amp2[pixnr])
 
