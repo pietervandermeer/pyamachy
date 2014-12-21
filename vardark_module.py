@@ -551,7 +551,7 @@ class AllDarks():
             self.readouts_ = np.concatenate((self.readouts_, readouts_))
             self.noise_ = np.concatenate((self.noise_, noise_))
             self.tdet_ = np.concatenate((self.tdet_, tdet_))
-            self.pet_ = np.concatenate((self.pet_, petje+np.zeros(jds_.size)))
+            self.pet_ = np.concatenate((self.pet_, pet_))
             self.coadd_ = np.concatenate((self.coadd_, coadd_))
 
         return
@@ -721,9 +721,8 @@ if __name__ == "__main__":
     print(orbit)
 
     ad = AllDarks([0.125, 0.5, 1.0])
-#    ad = AllDarks([0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=620, short=False, give_errors=True)
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=563, short=False, give_errors=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends, errors = ret 
 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
