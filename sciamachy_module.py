@@ -254,14 +254,11 @@ class orbitfilter:
         delta = self.monthlies - (orbit+1) # 2 orbits after eachother, so skip one. 
         idx = np.where(delta > 0)
         if np.isscalar(idx):
-            #print("scal")
             return self.monthlies[idx]
         elif idx[0].size == 0:
-            #print("00000")
             # no later monthly found, return given orbit
             return orbit
         else:
-            #print("tuple:",self.monthlies[idx[0]])
             # return first monthly after given orbit
             return self.monthlies[idx[0][0]]
 

@@ -567,7 +567,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
             #print(xnew_)
 
-            # compute dc error per bin
+            # compute dc error per bin (using propagation of fit parameter errors)
             err_dc = err_dcs[i_trend,:] 
             err_trend = err_trends[i_trend,:] 
             err_a1 = inter_err_amps[i_orbit,:]
@@ -589,7 +589,10 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
             wave[:, :] += f(xnew_)
             if i_trend >= 0:
-                vddb.store(orbit, wave, datapoint_count=datapoint_count[i_trend], uncertainties=uncertainties[i_trend,:], err_ds=err_ds)
+                vddb.store(orbit, wave, 
+                           datapoint_count=datapoint_count[i_trend], 
+                           uncertainties=uncertainties[i_trend,:], 
+                           err_ds=np.sqrt(err_ds))
             else:
                 vddb.store(orbit, wave, datapoint_count=0, uncertainties=dummy_uncertainties, err_ds=err_ds)
         i += 1

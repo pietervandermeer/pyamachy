@@ -9,7 +9,7 @@ from __future__ import print_function, division
 
 import h5py
 import numpy as np
-from numpy import cos, pi
+from numpy import cos, pi, sin
 from kapteyn import kmpfit
 import logging
 
@@ -28,14 +28,6 @@ fname = '/SCIA/SDMF31/sdmf_extract_calib.h5'
 n_pix = 1024
 
 #- functions -------------------------------------------------------------------
-
-def scia_dark_residuals1(p, data):
-    x, y, yerr = data 
-    return y - scia_dark_fun1(p, x)
-
-def scia_dark_residuals1e(p, data):
-    x, y, yerr = data 
-    return (y - scia_dark_fun1(p, x)) / yerr
 
 # should be raised if there is a truly unexpected error in the dark fit (data looks ok, but still failed)
 class FitFailedError(Exception):
@@ -67,7 +59,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     # minimum nr of degrees of freedom
     min_degrees = 8
 
-    orbit_range = orbit-2., orbit+2.
+    orbit_range = orbit-1, orbit+.99
     if verbose:
         print(orbit_range)
 
@@ -92,9 +84,9 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
 
     aoinfo = dict(fixed=False, limits=[0,10000])
     dcinfo = dict(fixed=False, limits=[-10000.,+500000.])
-    amp1info = dict(fixed=False, limits=[-1000,+1000])
-    trendinfo = dict(fixed=False, limits=[-1000,+1000])
-    amp2info = dict(fixed=False, limits=[-1.,+1.])
+    amp1info = dict(fixed=False, limits=[-200,+200])
+    trendinfo = dict(fixed=False, limits=[-100,+100])
+    amp2info = dict(fixed=False, limits=[-.4,+.4])
     phase1info = dict(fixed=False, limits=[-3.,+3.])
     phase2info = dict(fixed=False, limits=[-3.,+3.])
     parinfo = [aoinfo,dcinfo,amp1info,trendinfo,phase1info,amp2info,phase2info]
@@ -102,7 +94,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     # prepare initial parameters
     ao0 = 3000
     dc0 = 4000
-    amp1_0 = 10
+    amp1_0 = 0
     trend0 = 0
     amp2_0 = 0.1
     phase_offset1 = 0
@@ -114,6 +106,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     statuses = np.zeros(n_pix)
     res_phases = np.zeros(n_pix)
     res_phases2 = np.zeros(n_pix)
+    err_phase1 = np.zeros(n_pix)
+    err_phase2 = np.zeros(n_pix)
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
@@ -126,7 +120,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
             # pass a
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
-                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -136,7 +130,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 # pass b : coarse kappa sigma filter 
                 idx = (residual-avg_residual)**2 > 10.*dev_residual
                 if np.sum(idx) > 0:
-                    pix_sigmas[idx] *= 50
+                    pix_sigmas[idx] *= 500
                 fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
                 residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
                 dev_residual = np.std(residual)
@@ -145,7 +139,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 # pass c : finer kappa sigma filter 
                 idx = (residual-avg_residual)**2 > 5.*dev_residual
                 if np.sum(idx) > 0:
-                    pix_sigmas[idx] *= 50
+                    pix_sigmas[idx] *= 500
                 fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
 
             n_done += 1
@@ -156,6 +150,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         statuses[pixnr] = fitobj.status
         res_phases[pixnr] = fitobj.params[4]
         res_phases2[pixnr] = fitobj.params[6]
+        err_phase1[pixnr] = fitobj.stderr[4]
+        err_phase2[pixnr] = fitobj.stderr[6]
         if (fitobj.status <= 0):
            raise FitFailedError('Error message = '+fitobj.message)
 
@@ -190,9 +186,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     err_lcs = np.zeros(n_pix)
     err_amps = np.zeros(n_pix)
     err_amps2 = np.zeros(n_pix)
-    err_phase1 = np.zeros(n_pix)
     err_trends = np.zeros(n_pix)
-    err_phase2 = np.zeros(n_pix)
     statuses = np.zeros(n_pix)
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
@@ -206,7 +200,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
             # pass a
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
-                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -216,7 +210,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 # pass b : coarse kappa sigma filter 
                 idx = (residual-avg_residual)**2 > 10.*dev_residual
                 if np.sum(idx) > 0:
-                    pix_sigmas[idx] *= 50
+                    pix_sigmas[idx] *= 500
                 fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
                 residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
                 dev_residual = np.std(residual)
@@ -225,7 +219,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 # pass c : finer kappa sigma filter 
                 idx = (residual-avg_residual)**2 > 5.*dev_residual
                 if np.sum(idx) > 0:
-                    pix_sigmas[idx] *= 50
+                    pix_sigmas[idx] *= 500
                 fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
 
             n_done += 1
@@ -246,22 +240,46 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         err_lcs[pixnr] = fitobj.stderr[1]
         err_amps[pixnr] = fitobj.stderr[2]
         err_trends[pixnr] = fitobj.stderr[3]
-        err_phase1[pixnr] = fitobj.stderr[4]
         err_amps2[pixnr] = fitobj.stderr[5]
-        err_phase2[pixnr] = fitobj.stderr[6]
 
     channel_amp2 = np.median(amps2[np.where(statuses > 0)])
 
     if debug_pixnr is not None:
         import matplotlib.pyplot as plt
+
+        # compute errors
+        n_bins = 100
+        x_bins = np.linspace(orbit_range[0], orbit_range[1], num=n_bins) - orbit
+        err_ds = np.empty([n_bins], dtype=np.float64)
+        for i in range(n_bins):
+            phi = x_bins[i]
+            err_ds[i] = err_lcs[debug_pixnr]**2 \
+                      + err_amps[debug_pixnr]**2 * (cos(2*pi*(res_phases[debug_pixnr]+phi)) + amps2[debug_pixnr]*(cos(4*pi*(res_phases2[debug_pixnr]+phi))))**2 \
+                      + err_phase1[debug_pixnr]**2 * (2*pi*amps[debug_pixnr]*sin(res_phases[debug_pixnr]+phi))**2 \
+                      + err_amps2[debug_pixnr]**2 * (amps[debug_pixnr]*cos(4*pi*(res_phases2[debug_pixnr]+phi)))**2 \
+                      + err_phase2[debug_pixnr]**2 * (amps[debug_pixnr]*amps2[debug_pixnr]*sin(4*pi*(res_phases2[debug_pixnr]+phi)))**2 \
+                      + err_trends[debug_pixnr]**2 * phi**2
+        err_ds = np.sqrt(err_ds)
+
         plt.cla()
         p = aos[debug_pixnr], lcs[debug_pixnr], amps[debug_pixnr], trends[debug_pixnr], channel_phase1, amps2[debug_pixnr], channel_phase2
-        x = ephases-orbit, pet
+        plt.errorbar(ephases-orbit, all_readouts[:,debug_pixnr], yerr=all_sigmas[:,debug_pixnr], fmt='bo', label="data")
+        x = x_bins, np.array((0.5-petcorr) + np.zeros(n_bins))
         model = scia_dark_fun2(p,x)
-        print("model=", model)
-        plt.plot(ephases-orbit, all_readouts[:,debug_pixnr], 'bo', label="data")
-        plt.plot(ephases-orbit, model, 'go', label="model")
-        plt.legend(loc="best")
+        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
+        plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
+        x = x_bins, np.array((1.0-petcorr) + np.zeros(n_bins))
+        model = scia_dark_fun2(p,x)
+        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
+        plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
+        x = x_bins, np.array((0.125-petcorr) + np.zeros(n_bins))
+        model = scia_dark_fun2(p,x)
+        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
+        plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
+        #plt.legend(loc="best")
         plt.show()
 
     if give_errors:
@@ -272,6 +290,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                   "phase1":np.median(err_phase1), 
                   "phase2":np.median(err_phase2), 
                   "trends":err_trends}
+        if verbose:
+            print(errors)
         return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends, errors
     else:
         return channel_phase1, channel_phase2, aos, lcs, amps, channel_amp2, trends
@@ -316,7 +336,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     # get all dark data
     # 
 
-    orbit_range = orbit-1.25, orbit+1.25
+    orbit_range = orbit-1, orbit+.99
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
     if ephases.size <= 2:
@@ -384,7 +404,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             #print(orbit, pixnr, p0, parinfo)
             idx = pix_sigmas == 0
             if np.sum(idx) > 0:
-                pix_sigmas[idx] = 1000 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -694,23 +714,42 @@ if __name__ == "__main__":
     just a test..
     """
 
+    np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
+
     of = orbitfilter()
-    orbit = of.get_closest_monthly(43500)
+    orbit = of.get_next_monthly(43500)
     print(orbit)
 
     ad = AllDarks([0.125, 0.5, 1.0])
+#    ad = AllDarks([0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=489, short=False, give_errors=True)
-    channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends = ret 
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=620, short=False, give_errors=True)
+    channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends, errors = ret 
 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
 
     print("channel_phase1=",channel_phase1)
     print("channel_phase2=",channel_phase2)
     print("channel_amp2=",channel_amp2)
+    print("pixels with special dark current behavior:")
     for pixnr in pixels:
         print("PIXNR", pixnr)
         print("ao=",aos[pixnr])
         print("dc=",dcs[pixnr])
         print("amp=",amps[pixnr])
         print("trend=",trends[pixnr])
+
+    print("dc offset errors:")
+    err_off = errors["off"] 
+    err_ao = errors["aos"] 
+    err_amp = errors["amps"] 
+    err_phase1 = errors["phase1"] 
+    err_amp2 = errors["amps2"] 
+    for pixnr in range(1024):
+        print(pixnr)
+        print("dc off:", dcs[pixnr], err_off[pixnr])
+        print("ao:", aos[pixnr], err_ao[pixnr])
+        print("amp1:", amps[pixnr], err_amp[pixnr])
+        print("phase1:", channel_phase1, err_phase1)
+        print("amp2:", channel_amp2, err_amp2)
+
