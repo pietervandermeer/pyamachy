@@ -111,16 +111,18 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        idx_fin = np.isfinite(pix_readouts)
+        idx_fin = np.isfinite(pix_readouts) & (pix_sigmas > 0)
         if np.sum(idx_fin) > min_degrees:
             pix_readouts = pix_readouts[idx_fin]
             pix_sigmas = pix_sigmas[idx_fin]
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
+            n = pix_readouts.size
+
+            # normalize sigmas
+            pix_sigmas /= np.sqrt(np.sum(pix_sigmas**2)*(n-7))
+            pix_sigmas *= 1000
 
             # pass a
-            idx = pix_sigmas == 0
-            if np.sum(idx) > 0:
-                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -150,8 +152,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         statuses[pixnr] = fitobj.status
         res_phases[pixnr] = fitobj.params[4]
         res_phases2[pixnr] = fitobj.params[6]
-        err_phase1[pixnr] = fitobj.stderr[4]
-        err_phase2[pixnr] = fitobj.stderr[6]
+        err_phase1[pixnr] = fitobj.xerror[4]
+        err_phase2[pixnr] = fitobj.xerror[6]
         if (fitobj.status <= 0):
            raise FitFailedError('Error message = '+fitobj.message)
 
@@ -191,16 +193,18 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     for pixnr in range(n_pix):
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        idx_fin = np.isfinite(pix_readouts)
+        idx_fin = np.isfinite(pix_readouts) & (pix_sigmas > 0)
         if np.sum(idx_fin) > min_degrees:
             pix_readouts = pix_readouts[idx_fin]
             pix_sigmas = pix_sigmas[idx_fin]
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
+            n = pix_readouts.size
+
+            # normalize sigmas
+            pix_sigmas /= np.sqrt((np.sum(pix_sigmas**2))*(n-7))
+            pix_sigmas *= 1000
 
             # pass a
-            idx = pix_sigmas == 0
-            if np.sum(idx) > 0:
-                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -236,16 +240,17 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         if (fitobj.status <= 0):
            print('Error message = ', fitobj.message)
            quit()
-        err_aos[pixnr] = fitobj.stderr[0]
-        err_lcs[pixnr] = fitobj.stderr[1]
-        err_amps[pixnr] = fitobj.stderr[2]
-        err_trends[pixnr] = fitobj.stderr[3]
-        err_amps2[pixnr] = fitobj.stderr[5]
+        err_aos[pixnr] = fitobj.xerror[0]
+        err_lcs[pixnr] = fitobj.xerror[1]
+        err_amps[pixnr] = fitobj.xerror[2]
+        err_trends[pixnr] = fitobj.xerror[3]
+        err_amps2[pixnr] = fitobj.xerror[5]
 
     channel_amp2 = np.median(amps2[np.where(statuses > 0)])
 
     if debug_pixnr is not None:
         import matplotlib.pyplot as plt
+        plt.ticklabel_format(useOffset=False)
 
         # compute errors
         n_bins = 100
@@ -267,17 +272,17 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         plt.errorbar(ephases-orbit, all_readouts[:,debug_pixnr], yerr=all_sigmas[:,debug_pixnr], fmt='bo', label="data")
         x = x_bins, np.array((0.5-petcorr) + np.zeros(n_bins))
         model = scia_dark_fun2(p,x)
-        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model, 'g-', label="model", lw=2)
         plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
         plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
         x = x_bins, np.array((1.0-petcorr) + np.zeros(n_bins))
         model = scia_dark_fun2(p,x)
-        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model, 'g-', label="model", lw=2)
         plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
         plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
         x = x_bins, np.array((0.125-petcorr) + np.zeros(n_bins))
         model = scia_dark_fun2(p,x)
-        plt.plot(x_bins, model, 'g-', label="model")
+        plt.plot(x_bins, model, 'g-', label="model", lw=2)
         plt.plot(x_bins, model+err_ds, 'g-', label="model hi")
         plt.plot(x_bins, model-err_ds, 'g-', label="model lo")
         plt.show()
@@ -433,9 +438,9 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             raise FitFailedError(fitobj.message)
         statuses[pixnr] = fitobj.status
         res_lcs[pixnr] = fitobj.params[1]
-        err_lcs[pixnr] = fitobj.stderr[1]
+        err_lcs[pixnr] = fitobj.xerror[1]
         res_trends[pixnr] = fitobj.params[3]
-        err_trends[pixnr] = fitobj.stderr[3]
+        err_trends[pixnr] = fitobj.xerror[3]
         uncertainty[pixnr] = np.std(scia_dark_fun2(fitobj.params, x) - pix_readouts)
 
     if give_errors:
@@ -719,9 +724,10 @@ if __name__ == "__main__":
 
     ad = AllDarks([0.125, 0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=563, short=False, give_errors=True)
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=615, short=False, give_errors=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends, errors = ret 
 
+    # some pixels with extreme or negative dark current. make good test cases! 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
 
     print("channel_phase1=",channel_phase1)
@@ -750,4 +756,3 @@ if __name__ == "__main__":
         print("phase1:", channel_phase1, err_phase1[pixnr])
         print("phase2:", channel_phase2, err_phase2[pixnr])
         print("amp2:", channel_amp2, err_amp2[pixnr])
-

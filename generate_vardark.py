@@ -115,8 +115,8 @@ class VarDarkdb:
         dset.attrs['description'] = np.string_("SCIA variable dark signal of channel 8")
         self.ds_vdark = dset
 
-        self.ds_err_ds = self.fid.create_dataset("errorVarDark", creshape, maxshape=maxshape, dtype=np.float64)
-        dset = self.ds_err_ds
+        self.ds_err_vdark = self.fid.create_dataset("errorVarDark", creshape, maxshape=maxshape, dtype=np.float64)
+        dset = self.ds_err_vdark
         dset.dims[0].attach_scale( self.fid['dim_orbit'] )
         dset.dims[0].label = 'absolute orbit number'
         dset.dims[1].attach_scale( self.fid['dim_phase'] )
@@ -178,8 +178,7 @@ class VarDarkdb:
             self.ds_pixel = self.fid["dim_pixel"]
             self.ds_phase = self.fid["dim_phase"]
             self.ds_vdark = self.fid["varDark"]
-            self.ds_err_dcs = self.fid["errorDCs"]
-            self.ds_err_trends = self.fid["errorTrends"]
+            self.ds_err_vdark = self.fid["errorVarDark"]
             self.ds_datapoint_counts = self.fid["dataPointCounts"]
             self.ds_uncertainties = self.fid["uncertainties"]
         except KeyError:
@@ -270,8 +269,8 @@ class VarDarkdb:
             return
 
         self.ds_vdark[indx,:,:] = vdark
-        if err_dcs is not None:
-            self.ds_err_ds[indx,:] = err_ds
+        if err_ds is not None:
+            self.ds_err_vdark[indx,:,:] = err_ds
         if datapoint_count is not None:
             self.ds_datapoint_counts[indx[0][0]] = datapoint_count
         if uncertainties is not None:
@@ -286,9 +285,8 @@ class VarDarkdb:
         self.ds_vdark.resize( self.n_write+1, axis=0 )
         self.ds_vdark[self.n_write,:,:] = vdark
         if err_ds is not None:
-            self.ds_err_ds.resize( self.n_write+1, axis=0 )
-            print(err_ds.shape)
-            self.ds_err_ds[self.n_write,:] = err_ds
+            self.ds_err_vdark.resize( self.n_write+1, axis=0 )
+            self.ds_err_vdark[self.n_write,:,:] = err_ds
         if datapoint_count is not None:
             self.ds_datapoint_counts.resize((self.n_write+1,))
             self.ds_datapoint_counts[self.n_write] = datapoint_count
@@ -501,11 +499,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     err_dcs = err_dcs[idx_goodphi,:]
     err_trends = err_trends[idx_goodphi,:]
     datapoint_count = datapoint_count[idx_goodphi]
-    # filter a single pixel. probably a bad idea
-    #idx_goody = np.isfinite(trending_ys[:,pixnr])
-    #trending_phis = trending_phis[idx_goody]
-    #trending_ys = trending_ys[idx_goody,:]
-    #...
     print("done.")
 
     ximin = int(xmin)
@@ -528,8 +521,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         f2 = interp1d(trending_phis, trending_ys[:,pixnr], kind='cubic')
     else:
         trending_ys = np.concatenate((trending_ys[:1,:],trending_ys,trending_ys[-1:,:]))
-        #print(trending_phis.shape, trending_ys.shape)
-        print(trending_phis)
         f = interp1d(trending_phis, trending_ys, axis=0)
     print("done.")
 
@@ -579,9 +570,11 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                         + err_phi2**2 * (a1*a2*sin(4*pi*(phi2+phi)))**2 \
                         + err_trend**2 * phi**2
 
+        # current orbit and first point in the new orbit (easier for data user)
+        idx = (xnewi == orbit) | (xnew == (orbit+1)) 
+        xnew_ = xnew[idx]
+
         if pixnr is not None:
-            idx = (xnewi == orbit) | (xnew == (orbit+1)) # current orbit and first point in the new orbit (easier for data user)
-            xnew_ = xnew[idx]
             p = aos[pixnr], dcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
             wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
             full_wave[idx] = wave_ + f(xnew_) # add interpolated dc offset (daily+seasonal variation)
@@ -591,7 +584,6 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
                 p = aos[i_pix], dcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
                 wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
                 wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
-            #print(xnew_)
 
             wave[:, :] += f(xnew_)
             if i_trend >= 0:
