@@ -12,6 +12,8 @@ import numpy as np
 from numpy import cos, pi, sin
 from kapteyn import kmpfit
 import logging
+import unittest
+import numpy.testing as nptst
 
 from ranges import remove_overlap, is_in_range, merge_ranges
 from envisat import PhaseConverter
@@ -59,11 +61,15 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
     # minimum nr of degrees of freedom
     min_degrees = 8
 
-    orbit_range = orbit-1, orbit+.99
+    orbit_range = orbit-2, orbit+1.99
     if verbose:
         print(orbit_range)
 
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
+
+    idxje = pet > .5
+    if np.sum(idxje) == 0:
+        print("warn: no 1.0s pet")
 
     #
     # fit it
@@ -260,9 +266,9 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
             phi = x_bins[i]
             err_ds[i] = err_lcs[debug_pixnr]**2 \
                       + err_amps[debug_pixnr]**2 * (cos(2*pi*(res_phases[debug_pixnr]+phi)) + amps2[debug_pixnr]*(cos(4*pi*(res_phases2[debug_pixnr]+phi))))**2 \
-                      + err_phase1[debug_pixnr]**2 * (2*pi*amps[debug_pixnr]*sin(res_phases[debug_pixnr]+phi))**2 \
+                      + err_phase1[debug_pixnr]**2 * (2*pi*amps[debug_pixnr]*sin(2*pi*(res_phases[debug_pixnr]+phi)))**2 \
                       + err_amps2[debug_pixnr]**2 * (amps[debug_pixnr]*cos(4*pi*(res_phases2[debug_pixnr]+phi)))**2 \
-                      + err_phase2[debug_pixnr]**2 * (amps[debug_pixnr]*amps2[debug_pixnr]*sin(4*pi*(res_phases2[debug_pixnr]+phi)))**2 \
+                      + err_phase2[debug_pixnr]**2 * (4*pi*amps[debug_pixnr]*amps2[debug_pixnr]*sin(4*pi*(res_phases2[debug_pixnr]+phi)))**2 \
                       + err_trends[debug_pixnr]**2 * phi**2
         err_ds = np.sqrt(err_ds)
 
@@ -339,10 +345,10 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
     # get all dark data
     # 
 
-    orbit_range = orbit-1, orbit+.99
+    orbit_range = orbit-1, orbit+0.99
     n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = alldarks.get_range(orbit_range)
 
-    if ephases.size <= 2:
+    if ephases.size < min_degrees:
         raise NotEnoughDataError("Not enough datapoints for fit: "+str(ephases.size))
 
     #
@@ -398,15 +404,17 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
         p0 = np.array([aos[pixnr], lcs[pixnr], amps[pixnr], 0, channel_phaseshift, amp2, channel_phaseshift2]) 
         pix_readouts = all_readouts[:,pixnr]
         pix_sigmas = all_sigmas[:,pixnr]
-        idx_fin = np.isfinite(pix_readouts)
+        idx_fin = np.isfinite(pix_readouts) & (pix_sigmas > 0) & np.isfinite(pix_sigmas)
         if np.sum(idx_fin) > min_degrees:
             pix_readouts = pix_readouts[idx_fin]
             pix_sigmas = pix_sigmas[idx_fin]
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
+            n = pix_readouts.size
 
-            idx = pix_sigmas == 0
-            if np.sum(idx) > 0:
-                pix_sigmas[idx] = 9999 # prohibit 0 sigmas as these crash kmpfit, just make it a huge sigma.
+            # normalize sigmas
+            #pix_sigmas /= np.sqrt((np.sum(pix_sigmas**2))*(n-2))
+            #pix_sigmas *= 1000
+
             fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
@@ -555,7 +563,6 @@ class AllDarks():
             self.tdet_ = np.concatenate((self.tdet_, tdet_))
             self.pet_ = np.concatenate((self.pet_, pet_))
             self.coadd_ = np.concatenate((self.coadd_, coadd_))
-
         return
 
     def _lumpl(self, orbit_range):
@@ -636,21 +643,21 @@ class AllDarks():
 
     def get_range(self, orbit_range, autoLump=True):
         """
-        retrieves the specified orbit range of darks for the caller. 
+        retrieves the specified orbit range (may be floating point numbers) of darks for the caller. 
         takes into account OCR43 dark state definition change. 
         takes into account orbit slicing issue in level 0 and sdmf extract db
 
         Parameters
         ----------
 
-        orbit_range : tuple or list, 2 integerss
+        orbit_range : tuple or list, 2 floats
             orbit range
         autoLump : boolean, optional
             set this to automatically buffer darks that are not yet in the buffer
         """
         if autoLump:
             self.buffer_range(orbit_range)
-        idx = (self.ephases.astype('i') >= orbit_range[0]) & (self.ephases.astype('i') <= orbit_range[1])
+        idx = (self.ephases >= orbit_range[0]) & (self.ephases <= orbit_range[1])
         return np.sum(idx), 0, self.pet[idx], self.coadd[idx], self.readouts[idx,:], self.noise[idx,:], self.ephases[idx] 
 
 def load_varkdark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
@@ -709,22 +716,54 @@ def load_sdmf30_dark(orbit):
     dcs = (dset_dc[7*1024:,idx]).flatten()
     return aos, dcs
 
+class AllDarksTestCase(unittest.TestCase):
+
+    def setUp(self):
+        return
+
+    def test_data_range(self):
+        """ test if returned data is in correct orbit range """
+        in_pets = [0.125, 0.5, 1.0]
+        orbit_range = [15000, 15001]
+        ad = AllDarks(in_pets)
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = ad.get_range(orbit_range)
+        self.assertGreater(n_exec, 0)
+        self.assertTrue(np.all(ephases >= orbit_range[0]))
+        self.assertTrue(np.all(ephases <= orbit_range[1]))
+        return
+
+    def test_petcorr(self):
+        """ test if pet timing correction is applied  """
+        in_pets = [0.125, 0.5, 1.0]
+        ad = AllDarks(in_pets)
+        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = ad.get_range([15000,15001])
+        self.assertGreater(n_exec, 0)
+        pet_unique_uncorr = np.unique(np.sort(pet)) + petcorr
+        nptst.assert_allclose(pet_unique_uncorr, in_pets, rtol=1e-5) # this tolerance should be ok for float32
+        return
+
 #- main ------------------------------------------------------------------------
 
 if __name__ == "__main__":
     """
     just a test..
     """
-
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
+    #unittest.main()
+
+    #
+    # perform a fir of a monthly calibration orbit and print statistics
+    #
+
     of = orbitfilter()
-    orbit = of.get_next_monthly(43500)
+    #orbit = of.get_next_monthly(43500) # late orbit.. loads of bad pixels to check out. 
+    orbit = of.get_next_monthly(5000) # special.. here monthlies have nothing but 0.5s.. you need neighbouring orbits to get the rest!
     print(orbit)
 
     ad = AllDarks([0.125, 0.5, 1.0])
 
-    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=615, short=False, give_errors=True)
+    ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=621, short=False, give_errors=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends, errors = ret 
 
     # some pixels with extreme or negative dark current. make good test cases! 

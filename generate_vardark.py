@@ -125,7 +125,7 @@ class VarDarkdb:
         dset.dims[2].label = 'pixel ID'
         dset.attrs['long_name'] = np.string_("Dark signal error (channel 8)")
         dset.attrs['units'] = np.string_("BU/s")
-        dset.attrs['description'] = np.string_("Error in the dark signal of SCIA channel 8.")
+        dset.attrs['description'] = np.string_("Error in the variable dark signal of SCIA channel 8.")
 
         self.ds_datapoint_counts = self.fid.create_dataset("dataPointCounts", (0,), maxshape=(None,), dtype=np.int16)
         dset = self.ds_datapoint_counts
@@ -402,7 +402,7 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     i_orbit = 0
     m = 0
     for orbit in in_orblist[:]:
-        aos = inter_aos[i_orbit,:] 
+        aos = inter_aos[i_orbit,:]
         n = np.sum(eorbits == orbit)
         if n > 0:
             dark_current[m:m+n,:] -= (np.matrix(aos).T * np.ones(n)).T
@@ -565,9 +565,9 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
             phi = float(i) / pts_per_orbit
             err_ds[i,:] = err_dc**2 \
                         + err_a1**2 * (cos(2*pi*(phi1+phi)) + a2*(cos(4*pi*(phi2+phi))))**2 \
-                        + err_phi1**2 * (2*pi*a1*sin(phi1+phi))**2 \
+                        + err_phi1**2 * (2*pi*a1*sin(2*pi*(phi1+phi)))**2 \
                         + err_a2**2 * (a1*cos(4*pi*(phi2+phi)))**2 \
-                        + err_phi2**2 * (a1*a2*sin(4*pi*(phi2+phi)))**2 \
+                        + err_phi2**2 * (4*pi*a1*a2*sin(4*pi*(phi2+phi)))**2 \
                         + err_trend**2 * phi**2
 
         # current orbit and first point in the new orbit (easier for data user)
@@ -600,21 +600,50 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
 
     if pixnr is not None:
         # single pixel
+
+        # simudark, just for reference
+        fid = h5py.File("/SCIA/SDMF30/sdmf_simudark.h5", 'r')
+        grp = fid['/ch8']
+        dset = grp['orbitList']
+        orbitList = dset[:]
+        simu30 = np.empty([xnew.size])
+        i_ = 0
+        x_ = np.linspace(0,1,51)
+        for orbit_ in range(first_orbit,last_orbit-1):
+            metaIndx = np.argmin(abs(orbitList - orbit_))
+            dset = grp['metaTable']
+            mtbl = dset[metaIndx]
+            dset = grp['ao']
+            ao = dset[:,metaIndx]
+            dset = grp['lc']
+            lc = dset[:,metaIndx]
+            dset = grp['amp1']
+            amp1 = dset[:,metaIndx]
+
+    #        orbsig = cos( 2 * pi * (mtbl['PHASE1'] + smr.mtbl['orbitPhase']) ) \
+    #            + mtbl['SIG_AMP2'] * cos( 4 * pi * ( mtbl['PHASE2'] 
+    #                                                 + smr.mtbl['orbitPhase']) )
+
+            orbvar = cos( 2 * pi * (mtbl['PHASE1'] + x_) ) + mtbl['AMP2'] * cos( 4 * pi * (mtbl['PHASE2'] + x_) )
+            #indx = 7 * 1024 + np.arange(1024)
+            #corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
+            simu30[i_*50:i_*50+51] = lc[pixnr] + orbvar * amp1[pixnr]
+            i_ += 1
+
         import matplotlib.pyplot as plt
         plt.ticklabel_format(useOffset=False)
-        print(plot_x.shape, plot_y.shape)
-        print(trending_phis.shape, trending_ys.shape)
         plt.title("Variable dark current for pixel "+str(pixnr)+", ch8")
         plt.xlabel("Orbit number")
         plt.ylabel("Dark current (BU/s)")
         plt.errorbar(plot_x, plot_y, yerr=plot_yerr, fmt='bo')
         plt.plot(trending_phis, trending_ys[:,pixnr], 'ro', 
-                 xnew, f(xnew), '-', 
-                 xnew, f2(xnew), '--')
+                 xnew, f(xnew), 'r-', 
+                 xnew, f2(xnew), 'r--')
         plt.plot(xnew, full_wave, 'g-', lw=2)
         plt.plot(xnew, full_wave+full_err_ds, 'g-', lw=1)
         plt.plot(xnew, full_wave-full_err_ds, 'g-', lw=1)
-        plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct', 'rec upper', 'rec lower'], loc='best')
+        plt.plot(xnew, simu30, 'p-')
+        plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct', 'rec upper', 'rec lower', 'simu'], loc='best')
         plt.show()
 
     return

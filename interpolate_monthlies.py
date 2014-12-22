@@ -109,12 +109,12 @@ def interpolate_monthlies(db_out_name, db_in_name):
     i_err_phases = fout.create_dataset("err_phases", (n_orbits,n_pix,2), dtype='f')
     i_err_phases.attrs["long_name"] = np.string_("Error in phase shifts of channel 8 orbital variation")
     i_err_phases.attrs["units"] = np.string_("6.02e3 s")
-    i_err_phases.attrs["description"] = np.string_("Error in orbit phase shifts wrt eclipse of fundamental and first harmonic [0..1] per orbit.")
+    i_err_phases.attrs["description"] = np.string_("Error in orbit phase shifts wrt eclipse of fundamental and first harmonic [0..1] per orbit per pixel.")
 
     i_err_aos = fout.create_dataset("err_aos", (n_orbits,n_pix), dtype='f')
     i_err_aos.attrs["long_name"] = np.string_("Error in analog offset (channel 8)")
     i_err_aos.attrs["units"] = np.string_("BU")
-    i_err_aos.attrs["description"] = np.string_("Error in SCIA analog offset of channel 8")
+    i_err_aos.attrs["description"] = np.string_("Error in SCIA analog offset of channel 8, per orbit per pixel")
 
     i_err_amps = fout.create_dataset("err_amps", (n_orbits,n_pix), dtype='f')
     i_err_amps.attrs["long_name"] = np.string_("Error in fundamental amplitude, channel 8.")
@@ -124,7 +124,7 @@ def interpolate_monthlies(db_out_name, db_in_name):
     i_err_amp2 = fout.create_dataset("err_amp2", (n_orbits,n_pix), dtype='f')
     i_err_amp2.attrs["long_name"] = np.string_("Error in amplitude of first harmonic, channel 8")
     i_err_amp2.attrs["units"] = np.string_("")
-    i_err_amp2.attrs["description"] = np.string_("Error in amplitude of first harmonic, relative to fundamental amplitude [0..1], channel average.")
+    i_err_amp2.attrs["description"] = np.string_("Error in amplitude of first harmonic, relative to fundamental amplitude [0..1], per orbit per pixel.")
 
     fun_phase1 = extrap1d(interp1d(monthlies, phase_dset[:,0]))
     fun_phase2 = extrap1d(interp1d(monthlies, phase_dset[:,1]))
