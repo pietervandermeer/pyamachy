@@ -11,6 +11,7 @@ from __future__ import division, print_function
 
 import numpy as np
 from pixelquality import PixelQuality 
+import sciamachy
 
 #-- main -----------------------------------------------------------------------
 
@@ -63,14 +64,13 @@ if __name__ == "__main__":
     print("path =", path)
     print("output_fname =", output_fname)
     print("orbit_range =", orbit_range)
+    print("log level =", args.loglevel)
 
     #
     # setup log level
     #
 
-    numeric_level = getattr(logging, args.loglevel.upper(), None)
-    if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: %s' % loglevel)
+    numeric_level = logging.getLevelName(args.loglevel.upper())
 
     #
     # create log with name with form generate_pyxelmask_YY-MMM-DD_N.log 
@@ -89,7 +89,29 @@ if __name__ == "__main__":
     # open log
     #
 
-    logging.basicConfig(filename=logname, level=numeric_level)
+    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    rootLogger = logging.getLogger()
+
+    fileHandler = logging.FileHandler(logname)
+    fileHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(fileHandler)
+
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(consoleHandler)
+
+    logger = rootLogger 
+    rootLogger.setLevel(numeric_level)
+
+    #
+    # log parameters
+    #
+
+    logger.info("sdmf30_compat ="+str(args.sdmf30_compat))
+    logger.info("path ="+str(path))
+    logger.info("output_fname ="+str(output_fname))
+    logger.info("orbit_range ="+str(orbit_range))
+    logger.info("log level ="+str(args.loglevel))
 
     #
     # generate the masks
@@ -100,10 +122,11 @@ if __name__ == "__main__":
     for orbit in range(orbit_range[0],orbit_range[1]):
         try:
             p.calculate(orbit)
-        except:
-           logging.warning("calculation failed for orbit %d!" % orbit)
-           continue
+        except sciamachy.SdmfDataMissingError as e:
+            logger.exception(e)
+            logger.warning("calculation failed for orbit %d!" % orbit)
+            continue
 
-        print("orbit %d computed" % orbit)
+        logger.info("orbit %d computed" % orbit)
         p.write(directory=path, fname=output_fname)
-        print("Pixel mask data for orbit %d written to db." % orbit)
+        logger.info("Pixel mask data for orbit %d written to db." % orbit)

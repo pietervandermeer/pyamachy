@@ -317,6 +317,12 @@ def get_darkstateid(pet, orbit):
         # very early orbit?
         raise OrbitRangeError("orbit "+str(orbit)+" out of range")
 
+class SdmfDataMissingError(Exception):
+    pass
+
+class ClusDefError(Exception):
+    pass
+
 def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, readoutMean=False, readoutNoise=False, orbitList=False):
     """ 
     reads extracted state executions from database
@@ -346,7 +352,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
         #print(metaindx, metaindx[0].size, np.sum(metaindx))
 
     if np.sum(metaindx) == 0:
-        raise Exception('orbit range not present in database')
+        raise SdmfDataMissingError('orbit range '+str(orbitrange)+' not present in database')
 
     mtbl = mt_did[metaindx]
     dict['mtbl'] = mtbl
@@ -464,7 +470,7 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
         #print(np.nonzero(metaindx))
 
     if np.sum(metaindx) == 0:
-        raise Exception('orbit range not present in database')
+        raise SdmfDataMissingError('orbit range '+str(orbitrange)+' not present in database')
 
     mtbl = mt_did[metaindx]
     dict['mtbl'] = mtbl
@@ -512,7 +518,7 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
     if n_defchange > 1:
         orbit_end = np.append(orbit_start[1:], 100000)
     if n_defchange is 0:
-        raise Exception("Error in cluster definition")
+        raise ClusDefError("Error in cluster definition")
     clusdef_found = False
     for i_change in range(n_defchange):
         # next cluster definition if this one out of range
@@ -528,7 +534,7 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
             clusdef_found = True
 
     if not clusdef_found:
-        raise Exception("No cluster definition found for orbit range"+str(orbitrange))
+        raise ClusDefError("No cluster definition found for orbit range"+str(orbitrange))
 
     dict['pet'] = pet - petcorr
     dict['coadd'] = coadd
@@ -544,7 +550,7 @@ def get_closest_state_exec(orbit, stateid, calib_db, **kwargs):
     idx = np.argmin(np.abs(orbitlist[:] - orbit))
     orbit_ = orbitlist[idx]
     fid.close()
-    return read_extracted_states_([orbit_,orbit_], stateid, calib_db, **kwargs)
+    return read_extracted_states_ch8([orbit_,orbit_], stateid, calib_db, **kwargs)
 
 class NoiseModel:
     """

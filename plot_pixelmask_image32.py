@@ -5,11 +5,13 @@ import matplotlib.pyplot as plt
 import numpy as np 
 import h5py 
 
-start_orbit = 47310
+start_orbit = 47350
 end_orbit = 47400
 
 #f = h5py.File("sdmf_smooth_pyxelmask32.h5", "r")
-f = h5py.File("/SCIA/SDMF31/pieter/sdmf_pyxelmask32.h5", "r")
+#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_pyxelmask32.h5", "r")
+f = h5py.File("sdmf_pyxelmask32.h5", "r")
+
 ds_orbits = f["orbits"]
 ds_sat = f["saturation"]
 idx = np.argmin(np.abs(ds_orbits[:] - start_orbit))

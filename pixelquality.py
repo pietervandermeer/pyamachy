@@ -20,7 +20,7 @@ warnings.simplefilter("error") # warnings to errors
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
 from vardark import load_varkdark_orbit, read_ch8_darks
-from sciamachy import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr, NoiseModel
+from sciamachy import get_darkstateid, NonlinCorrector, get_closest_state_exec, petcorr, NoiseModel
 import config32
 
 #-- functions ------------------------------------------------------------------
