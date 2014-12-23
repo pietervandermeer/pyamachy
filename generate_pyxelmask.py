@@ -10,7 +10,7 @@ These are combined and are thresholded, and result in the boolean `combinedFlag'
 from __future__ import division, print_function
 
 import numpy as np
-from pixelquality_module import PixelQuality 
+from pixelquality import PixelQuality 
 
 #-- main -----------------------------------------------------------------------
 

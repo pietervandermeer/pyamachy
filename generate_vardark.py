@@ -18,8 +18,8 @@ import os.path
 import logging
 
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
-from sciamachy_module import get_darkstateid, petcorr, n_chanpix
-from vardark_module import AllDarks, trending_phase, fit_eclipse_orbit, FitFailedError, NotEnoughDataError
+from sciamachy import get_darkstateid, petcorr, n_chanpix
+from vardark import AllDarks, trending_phase, fit_eclipse_orbit, FitFailedError, NotEnoughDataError
 
 #-- versions -------------------------------------------------------------------
 
@@ -103,7 +103,7 @@ class VarDarkdb:
 
         dset = self.fid.create_dataset( "varDark", creshape,
                                         maxshape=maxshape, 
-                                        dtype=np.float64) #, chunks=chunks ) # chunking disabled as current libraries give deprecation error
+                                        dtype=np.float32) #, chunks=chunks ) # chunking disabled as current libraries give deprecation error
         dset.dims[0].attach_scale( self.fid['dim_orbit'] )
         dset.dims[0].label = 'absolute orbit number'
         dset.dims[1].attach_scale( self.fid['dim_phase'] )
@@ -115,7 +115,7 @@ class VarDarkdb:
         dset.attrs['description'] = np.string_("SCIA variable dark signal of channel 8")
         self.ds_vdark = dset
 
-        self.ds_err_vdark = self.fid.create_dataset("errorVarDark", creshape, maxshape=maxshape, dtype=np.float64)
+        self.ds_err_vdark = self.fid.create_dataset("errorVarDark", creshape, maxshape=maxshape, dtype=np.float32)
         dset = self.ds_err_vdark
         dset.dims[0].attach_scale( self.fid['dim_orbit'] )
         dset.dims[0].label = 'absolute orbit number'

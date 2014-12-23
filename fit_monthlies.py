@@ -14,8 +14,8 @@ import re
 from scipy.interpolate import interp1d
 
 from envisat import parseOrbitList
-from sciamachy_module import orbitfilter, get_darkstateid, petcorr, n_chanpix
-from vardark_module import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
+from sciamachy import orbitfilter, get_darkstateid, petcorr, n_chanpix
+from vardark import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 
 n_pix = n_chanpix

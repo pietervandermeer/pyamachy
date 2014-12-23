@@ -12,12 +12,10 @@ import numpy as np
 from numpy import cos, pi, sin
 from kapteyn import kmpfit
 import logging
-import unittest
-import numpy.testing as nptst
 
 from ranges import remove_overlap, is_in_range, merge_ranges
 from envisat import PhaseConverter
-from sciamachy_module import petcorr, orbitfilter, get_darkstateid, read_extracted_states_ch8, NonlinCorrector
+from sciamachy import petcorr, orbitfilter, get_darkstateid, read_extracted_states_ch8, NonlinCorrector
 from scia_dark_functions import scia_dark_fun1, scia_dark_fun2
 
 #- globals ---------------------------------------------------------------------
@@ -716,32 +714,6 @@ def load_sdmf30_dark(orbit):
     dcs = (dset_dc[7*1024:,idx]).flatten()
     return aos, dcs
 
-class AllDarksTestCase(unittest.TestCase):
-
-    def setUp(self):
-        return
-
-    def test_data_range(self):
-        """ test if returned data is in correct orbit range """
-        in_pets = [0.125, 0.5, 1.0]
-        orbit_range = [15000, 15001]
-        ad = AllDarks(in_pets)
-        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = ad.get_range(orbit_range)
-        self.assertGreater(n_exec, 0)
-        self.assertTrue(np.all(ephases >= orbit_range[0]))
-        self.assertTrue(np.all(ephases <= orbit_range[1]))
-        return
-
-    def test_petcorr(self):
-        """ test if pet timing correction is applied  """
-        in_pets = [0.125, 0.5, 1.0]
-        ad = AllDarks(in_pets)
-        n_exec, all_state_phases, pet, coadd, all_readouts, all_sigmas, ephases = ad.get_range([15000,15001])
-        self.assertGreater(n_exec, 0)
-        pet_unique_uncorr = np.unique(np.sort(pet)) + petcorr
-        nptst.assert_allclose(pet_unique_uncorr, in_pets, rtol=1e-5) # this tolerance should be ok for float32
-        return
-
 #- main ------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -749,8 +721,6 @@ if __name__ == "__main__":
     just a test..
     """
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
-
-    #unittest.main()
 
     #
     # perform a fir of a monthly calibration orbit and print statistics

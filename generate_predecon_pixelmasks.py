@@ -1,7 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from __future__ import print_function, division
 
-from pixelquality_module import PixelQuality
-from sciamachy_module import decon_start_orbits
+from pixelquality import PixelQuality
+from sciamachy import decon_start_orbits
 #from envisat import last_orbit
 
 if __name__ == "__main__":

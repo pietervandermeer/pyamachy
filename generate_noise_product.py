@@ -18,7 +18,7 @@ import pickle
 import numpy as np 
 import h5py
 
-from sciamachy_module import get_darkstateid, read_extracted_states_
+from sciamachy import get_darkstateid, read_extracted_states_
 from envisat import PhaseConverter
 
 #-- globals --------------------------------------------------------------------

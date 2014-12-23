@@ -1,21 +1,5 @@
-# -*- coding: iso-8859-1 -*-
-#
-# COPYRIGHT (c) 2014 SRON (pieter.van.der.meer@sron.nl)
-#
-#   This is free software; you can redistribute it and/or modify it
-#   under the terms of the GNU General Public License, version 2, as
-#   published by the Free Software Foundation.
-#
-#   The software is distributed in the hope that it will be useful, but
-#   WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#   General Public License for more details.
-#
-#   You should have received a copy of the GNU General Public License
-#   along with this program; if not, write to the Free Software
-#   Foundation, Inc., 59 Temple Place - Suite 330, 
-#   Boston, MA  02111-1307, USA.
-#
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """
 Contains functionality related to ENVISAT satellite operations.
@@ -23,8 +7,6 @@ Contains functionality related to ENVISAT satellite operations.
 
 from __future__ import print_function, division
 
-import unittest
-import numpy.testing as nptst
 import numpy as np
 import time
 from datetime import date
@@ -141,26 +123,3 @@ class PhaseConverter:
             self.phaselib._GET_SCIA_ROE_ORBITPHASE(ct.c_bool(eclipseMode), ct.c_bool(saa_flag), ct.c_long(n_records), ct.c_long(dummy_orbit), phases_c, jds_c) 
             return phases
 
-#-- unit tests -----------------------------------------------------------------
-
-class PhaseConverterTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.pc = PhaseConverter()
-        return
-
-    def test_fat1(self):
-        """ 
-        Just a randomly chosen factor acceptance test 
-        """
-        phases, orbits = self.pc.get_phase(np.array([1000.0,1000.1,1000.2,1000.3]), getOrbits=True)
-        expected_phases = np.array([0.10914163, -0.45960116, -0.02825826, -0.59700102], dtype=np.float32)
-        expected_orbits = [3004, 3006, 3007, 3009]
-        self.assertEqual(orbits.tolist(), expected_orbits)
-        nptst.assert_allclose(phases, expected_phases, rtol=1e-5) # this tolerance should be ok for float32
-        return
-
-#-- main -----------------------------------------------------------------------
-
-if __name__ == "__main__":
-    unittest.main()

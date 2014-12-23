@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 average pixel quality over entire mission
 """
@@ -6,8 +9,8 @@ from __future__ import print_function, division
 
 import h5py
 import numpy as np
-from pixelquality_module import PixelQuality
-from sciamachy_module import decon_start_orbits
+from pixelquality import PixelQuality
+from sciamachy import decon_start_orbits
 
 if __name__ == "__main__":
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)

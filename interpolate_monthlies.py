@@ -21,8 +21,8 @@ from scipy import array
 import h5py
 
 from envisat import parseOrbitList
-from sciamachy_module import orbitfilter
-from vardark_module import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
+from sciamachy import orbitfilter
+from vardark import AllDarks, trending_phase, fit_monthly, fit_eclipse_orbit
 from scia_dark_functions import scia_dark_fun2n, scia_dark_fun2m
 from fit_monthlies import fit_monthlies
 

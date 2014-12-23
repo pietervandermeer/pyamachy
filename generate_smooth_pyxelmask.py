@@ -12,7 +12,7 @@ import h5py
 import matplotlib.pyplot as plt
 import logging
 
-from pixelquality_module import create_figure_dset, create_mask_dset
+from pixelquality import create_figure_dset, create_mask_dset
 from mask import Mask
 
 #-- globals --------------------------------------------------------------------
