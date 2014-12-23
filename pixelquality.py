@@ -19,8 +19,8 @@ warnings.simplefilter("error") # warnings to errors
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
-from vardark_module import load_varkdark_orbit, read_ch8_darks
-from sciamachy_module import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr, NoiseModel
+from vardark import load_varkdark_orbit, read_ch8_darks
+from sciamachy import get_darkstateid, NonlinCorrector, read_extracted_states, get_closest_state_exec, petcorr, NoiseModel
 import config32
 
 #-- functions ------------------------------------------------------------------
@@ -365,9 +365,9 @@ class PixelQuality:
         exposuretime_max = 1.0-petcorr # for channel 8
         maxadc = 65535
         sig_max = 6000 # max BU/s over sahara. of course this may depend on sensitivity
-        lowbg = -analogoffset / exposuretime_max # low thermal background (can be negative)
-        highbg_s = (maxadc-analogoffset-sig_max)/exposuretime_max # highest possible thermal background with high signal
-        highbg = (maxadc-analogoffset)/exposuretime_max # highest possible thermal background
+        lowbg = -analogoffset / exposuretime_max # low dark signal (can be negative)
+        highbg_s = (maxadc-analogoffset-sig_max)/exposuretime_max # highest possible dark signal with high signal
+        highbg = (maxadc-analogoffset)/exposuretime_max # highest possible dark signal
         darkcurrent_ = np.nan_to_num(darkcurrent)
         darkcursat = (darkcurrent_ < lowbg) | (darkcurrent_ > highbg) # flags (only used for reference..)
         for pixnr in range(1024):
@@ -382,6 +382,9 @@ class PixelQuality:
             else:
                 q = 1.0
             if q < 0:
+                q = 0
+            elif q > 1.0:
+                # in theory, this should not be possible. but better safe than sorry. 
                 q = 0
             self.darkcursat_figure[pixnr] = q
             #print(pixnr, self.darkcursat_figure[pixnr], analogoffset[pixnr], darkcurrent[pixnr])
