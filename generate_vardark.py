@@ -575,13 +575,13 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         xnew_ = xnew[idx]
 
         if pixnr is not None:
-            p = aos[pixnr], dcs[pixnr], amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
+            p = 0, 0, amps[pixnr], 0, channel_phase1, channel_amp2, channel_phase2
             wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
             full_wave[idx] = wave_ + f(xnew_) # add interpolated dc offset (daily+seasonal variation)
             full_err_ds[idx] = err_ds[:,pixnr]
         else:
             for i_pix in range(n_pix):
-                p = aos[i_pix], dcs[i_pix], amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
+                p = 0, 0, amps[i_pix], 0, channel_phase1, channel_amp2, channel_phase2
                 wave_ = scia_dark_fun2n(p, xnew_) - scia_dark_fun2n(p, xt) # orbital variation wave only, no dc offset
                 wave[:, i_pix] = wave_ # add interpolated dc offset (daily+seasonal variation)
 
