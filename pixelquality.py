@@ -19,7 +19,7 @@ warnings.simplefilter("error") # warnings to errors
 
 from read_statedark_module import sdmf_read_statedark
 from darklimb_io_module import sdmf_read_rts_darklimb_record
-from vardark import load_varkdark_orbit, read_ch8_darks
+from vardark import load_vardark_orbit, read_ch8_darks
 from sciamachy import get_darkstateid, NonlinCorrector, get_closest_state_exec, petcorr, NoiseModel
 import config32
 
@@ -53,7 +53,8 @@ def calculate_light_figure(spec, verbose=False, give_smooth=False):
     smooth[smooth==0] = np.nan # avoid division by 0
     raw_figure = np.abs(spec / smooth) # compute ratio between smooth and raw spectrum
     idx = (np.isfinite(raw_figure)) & (np.abs(raw_figure) != 0)
-    reldev = np.empty(spec.shape) + np.nan
+    reldev = np.empty(spec.shape)
+    reldev[:] = np.nan
     reldev[idx] = np.exp(-np.abs(np.log(raw_figure[idx])))
 
     if verbose:
@@ -98,6 +99,9 @@ def plot_quality_number(spec, thresh):
     plt.plot(np.arange(spec.size), spec, 'bo', thres_x, thres_y, 'k-')
     plt.show()
     return 
+
+class DataMissingError(Exception):
+    pass
 
 class PixelQuality:
 
@@ -208,7 +212,7 @@ class PixelQuality:
         """
         idx = self.ds_orbits10[:] == orbit
         if np.sum(idx) == 0:
-            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+            raise DataMissingError("orbit "+str(orbit)+" is not present in noise database.")
         idx = np.argmax(idx)
         return self.ds_noise10[idx,:]
 
@@ -218,7 +222,7 @@ class PixelQuality:
         """
         idx = self.ds_orbits10[:] == orbit
         if np.sum(idx) == 0:
-            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+            raise DataMissingError("orbit "+str(orbit)+" is not present in noise database.")
         idx = np.argmax(idx)
         return self.ds_noise10[idx,:]
 
@@ -228,7 +232,7 @@ class PixelQuality:
         """
         idx = self.ds_orbits10[:] == orbit
         if np.sum(idx) == 0:
-            raise Exception("orbit "+str(orbit)+" is not present in noise database.")
+            raise DataMissingError("orbit "+str(orbit)+" is not present in noise database.")
         idx = np.argmax(idx)
         return self.ds_noise10[idx,:]
 
@@ -262,7 +266,7 @@ class PixelQuality:
         orbits = ds_orbits[:]
         idx = orbit == orbits
         if np.sum(idx) == 0:
-            raise Exception("orbit not in orbital mask")
+            raise DataMissingError("orbit not in orbital mask")
         i30 = np.argmax(idx)
         dset_chi = fid30["chiSquareFit"]
         return dset_chi[7*1024:8*1024,i30]
@@ -298,7 +302,7 @@ class PixelQuality:
         #
 
         fname = self.cfg['db_dir']+self.cfg['dark_fname']
-        wave_phases, wave_orbit, darkcurrent, analogoffset, uncertainty = load_varkdark_orbit(orbit, False, give_uncertainty=True, fname=fname)
+        wave_phases, wave_orbit, darkcurrent, analogoffset, uncertainty = load_vardark_orbit(orbit, False, give_uncertainty=True, fname=fname)
         # slice out a single phase, this is good enough for our purposes
         darkcurrent = darkcurrent[0,0,:].flatten()
         analogoffset = analogoffset.flatten()
@@ -475,7 +479,7 @@ class PixelQuality:
         #
 
         # fname = self.cfg['db_dir']+"pieter/vardark_short.h5"
-        # wave_phases_s, wave_orbit_s, darkcurrent_s, analogoffset_s = load_varkdark_orbit(orbit, False, fname=fname)
+        # wave_phases_s, wave_orbit_s, darkcurrent_s, analogoffset_s = load_vardark_orbit(orbit, False, fname=fname)
         # # slice out a single phase, this is good enough for our purposes
         # darkcurrent_s = darkcurrent_s[0,0,:].flatten()
         # analogoffset_s = analogoffset_s.flatten()
@@ -685,7 +689,7 @@ class PixelQuality:
             f = h5py.File(db_fname)
 
             if self.sdmf30_compat != f.attrs["sdmf30_compat"]:
-                raise Exception("db file has different SDMF3.0 compatibility than PixelQuality object!")
+                raise Exception("db file has different SDMF3.0 compatibility as PixelQuality object!")
             
             # check if orbit already present..
             dset = f['orbits']

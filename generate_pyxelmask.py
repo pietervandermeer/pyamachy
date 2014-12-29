@@ -10,6 +10,7 @@ These are combined and are thresholded, and result in the boolean `combinedFlag'
 from __future__ import division, print_function
 
 import numpy as np
+import pixelquality
 from pixelquality import PixelQuality 
 import sciamachy
 
@@ -48,6 +49,12 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--pixnr', action='store', type=int, default=None,
                         dest='pixnr', help="pixel number to be examined [0..1023]")
     args = parser.parse_args()
+
+    # default output name
+    if args.sdmf30_compat:
+        output_fname = "sdmf_pyxelmask30.h5"
+    else:
+        output_fname = "sdmf_pyxelmask32.h5"        
 
     if args.orbitrange is not None:
         orbit_range = args.orbitrange
@@ -123,6 +130,10 @@ if __name__ == "__main__":
         try:
             p.calculate(orbit)
         except sciamachy.SdmfDataMissingError as e:
+            logger.exception(e)
+            logger.warning("calculation failed for orbit %d!" % orbit)
+            continue
+        except pixelquality.DataMissingError as e:
             logger.exception(e)
             logger.warning("calculation failed for orbit %d!" % orbit)
             continue
