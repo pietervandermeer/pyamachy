@@ -513,7 +513,7 @@ class PixelQuality:
         # compute sdmf3.0 chisquare (sdmf3.2 vardark is more robust and hence generates different residuals)
         #
 
-        if sdmf30_compat:
+        if self.sdmf30_compat:
             chisquare = self.load_sdmf30_chi(orbit)
             self.chisquare30_figure = (50 - chisquare) / 50 # taken from SDMF3.0 configuration
             self.chisquare30_figure = self.clip_figure(self.chisquare30_figure)
