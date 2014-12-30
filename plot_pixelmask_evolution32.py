@@ -15,7 +15,7 @@ import wx
 
 from viewers import GUIViewer, DumpingViewer
 import envisat
-import sciamachy_module
+import sciamachy
 import distinct_colours
 
 #- functions -------------------------------------------------------------------
@@ -74,7 +74,7 @@ class PlotPixelmaskEvolution():
         #c = numpy.in1d(ideal_orbits, self.orbits)
         #print 'number of orbits present (ideally 46000) = ', c.sum()
 
-        self.orbfilter = sciamachy_module.orbitfilter()
+        self.orbfilter = sciamachy.orbitfilter()
         fname = self.cfg['db_dir']+self.cfg['pixelmask_fname']
         fmask = h5py.File(fname, 'r')
         self.orbits = (fmask['orbits'])[:]
@@ -196,7 +196,7 @@ class PlotPixelmaskEvolution():
                         label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls[self.mask],color=self.cols[2],
                         label='Total pixel quality (WLS response)')
-            fig.plot(orbits_,self.totalbad_wls[self.mask],color=self.cols[3],
+            fig.plot(orbits_,self.totalbad_sun[self.mask],color=self.cols[3],
                         label='Total pixel quality (Sun response)')
             fig.plot(orbits_,self.totalbad_inv[self.mask],color=self.cols[4],
                         label='Total pixel quality (invalid)')
@@ -207,13 +207,14 @@ class PlotPixelmaskEvolution():
             fig.plot(orbits_,self.totalbad_sat[self.mask],color=self.cols[7],
                         label='Total pixel quality (saturated)')
         else:
+            print(orbits_.size,self.totalbad_comf.size)
             fig.plot(orbits_,self.totalbad_comf,color=self.cols[0],
                         label='Total bad pixels (combined flag)')
             fig.plot(orbits_,self.totalbad_com,color=self.cols[1],
                         label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls,color=self.cols[2],
                         label='Total pixel quality (WLS response)')
-            fig.plot(orbits_,self.totalbad_wls,color=self.cols[3],
+            fig.plot(orbits_,self.totalbad_sun,color=self.cols[3],
                         label='Total pixel quality (Sun response)')
             fig.plot(orbits_,self.totalbad_inv,color=self.cols[4],
                         label='Total pixel quality (invalid)')

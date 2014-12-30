@@ -308,19 +308,14 @@ class PixelQuality:
         analogoffset = analogoffset.flatten()
 
         #
-        # load sdmf 3.1 dark fit
+        # load vardark short (for sun and wls)
         #
 
-        fdark = h5py.File("/SCIA/SDMF31/sdmf_dark.h5", 'r')
-        gdark = fdark['DarkFit']
-        darkcurrent_dset  = gdark["darkCurrent"]
-        darkcurrenterror_dset  = gdark["darkCurrentError"]
-        analogoffset_dset = gdark["analogOffset"]
-        darkcurrent31      = darkcurrent_dset[orbit-1,7*1024:]
-#        darkcurrenterror = darkcurrenterror_dset[orbit-1,:]
-        analogoffset31     = analogoffset_dset[orbit-1,7*1024:]
-        idx = (np.nan_to_num(analogoffset31) > 60000)
-        analogoffset31[idx] = np.nan
+        fname = self.cfg['db_dir']+self.cfg['dark_short_fname']
+        wave_phases, wave_orbit, darkcurrent_s, analogoffset_s, uncertainty = load_vardark_orbit(orbit, False, give_uncertainty=True, fname=fname)
+        # slice out a single phase, this is good enough for our purposes
+        darkcurrent_s = darkcurrent_s[0,0,:].flatten()
+        analogoffset_s = analogoffset_s.flatten()
 
         #
         # load dark state data (noise/readout for residual)
@@ -492,7 +487,7 @@ class PixelQuality:
         if debug:
             print("wls pets = ", dictwls['pet'])
         wls_readout = self.nlc.correct_ch8(dictwls['readoutMean']).flatten()
-        wls_readout -= darkcurrent31 * dictwls['pet'] + analogoffset31
+        wls_readout -= darkcurrent_s * dictwls['pet'] + analogoffset_s
         self.wls_reldev, smooth_wls = calculate_light_figure(wls_readout, verbose=debug, give_smooth=True)
         #plot_quality_number(self.wls_reldev, self.cfg["thresh_wls"])
 
@@ -504,7 +499,7 @@ class PixelQuality:
         if debug:
             print("sun pets = ", dictsun['pet'])
         sun_readout = self.nlc.correct_ch8(dictsun['readoutMean']).flatten()
-        sun_readout -= darkcurrent31 * dictsun['pet'] + analogoffset31
+        sun_readout -= darkcurrent_s * dictsun['pet'] + analogoffset_s
         self.sun_reldev, smooth_sun = calculate_light_figure(sun_readout, verbose=debug, give_smooth=True)
         # relative threshold
         #plot_quality_number(self.sun_reldev, self.cfg["thresh_sun"])
@@ -736,9 +731,10 @@ class PixelQuality:
             dset = f['saturation']
             dset.resize((self.n_write, self.num_chanpixels))
             dset[idx,:] = self.darkcursat_figure
-            dset = f['chisquare3.0']
-            dset.resize((self.n_write, self.num_chanpixels))
-            dset[idx,:] = self.chisquare30_figure
+            if self.sdmf30_compat:
+                dset = f['chisquare3.0']
+                dset.resize((self.n_write, self.num_chanpixels))
+                dset[idx,:] = self.chisquare30_figure
 
             f.close()
         else:

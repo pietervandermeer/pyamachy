@@ -665,6 +665,7 @@ def load_vardark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
             fname = basename+"_short.h5"
         else:
             fname = basename+"_long.h5"
+    #print("load_vardark_orbit(): fname=",fname)
     fid = h5py.File(fname, "r")
     orbit_dset = fid["dim_orbit"]
     idx_fid = orbit_dset[:] == orbit

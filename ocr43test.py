@@ -12,16 +12,19 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import h5py
 
-start = 4500
-end = 5000
-# start = 43000
-# end = 44000
-# start = 43300
-# end = 43400
-pixnr = 535
+#start = 4500
+#end = 5000
+start = 43000
+end = 44000
+#start = 43300
+#end = 43400
 
-#f = h5py.File("/SCIA/SDMF31/pieter/vardark_long.h5","r")
-f = h5py.File("vardark_long.h5","r")
+pixnr = 535
+phasebin = 10
+
+#f = h5py.File("/SCIA/SDMF31/pieter/vardark_short_.h5","r")
+f = h5py.File("/SCIA/SDMF31/pieter/vardark_long_.h5","r")
+#f = h5py.File("vardark_long.h5","r")
 ds_vardark = f["varDark"]
 ds_orbits = f["dim_orbit"]
 idx = (ds_orbits[:] >= start) & (ds_orbits[:] <= end)
@@ -29,10 +32,10 @@ if np.sum(idx) > 0:
     idx = np.where(idx)[0]
 else:
     raise Exception("No orbits found")
-vd = ds_vardark[idx,50,:]
+vd = ds_vardark[idx,phasebin,:]
 print(vd.shape)
 
-print(ds_vardark[idx,50,pixnr])
+print(ds_vardark[idx,phasebin,pixnr])
 
 # plt.cla()
 # imgplot = plt.imshow(vd, cmap = cm.Greys_r)
