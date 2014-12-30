@@ -669,7 +669,7 @@ def load_vardark_orbit(orbit, shortMode, give_uncertainty=False, fname=None):
     orbit_dset = fid["dim_orbit"]
     idx_fid = orbit_dset[:] == orbit
     if np.sum(idx_fid) == 0:
-        raise Exception("no thermal background found for orbit "+str(orbit)+"!")
+        raise Exception("no vardark data found for orbit "+str(orbit)+"!")
     therm_dset = fid["varDark"]
     if give_uncertainty:
         uncertainty_dset = fid["uncertainties"]
@@ -722,7 +722,7 @@ if __name__ == "__main__":
     np.set_printoptions(threshold=np.nan, precision=4, suppress=True, linewidth=np.nan)
 
     #
-    # perform a fir of a monthly calibration orbit and print statistics
+    # perform a fit of a monthly calibration orbit and print statistics
     #
 
     of = orbitfilter()
@@ -735,7 +735,7 @@ if __name__ == "__main__":
     ret = fit_monthly(ad, orbit, verbose=False, kappasigma=False, debug_pixnr=621, short=False, give_errors=True)
     channel_phase1, channel_phase2, aos, dcs, amps, channel_amp2, trends, errors = ret 
 
-    # some pixels with extreme or negative dark current. make good test cases! 
+    # pixels with extreme or negative dark current make good test cases! 
     pixels = [399,406,415,423,424,426,431,433,458,463,465,484,504,514,517,532,534,544,549,562,563,574,577,578,582,598,600,604,613,615,597]
 
     print("channel_phase1=",channel_phase1)
