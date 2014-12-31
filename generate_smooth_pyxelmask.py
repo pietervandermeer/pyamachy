@@ -434,6 +434,15 @@ if __name__ == "__main__":
         ds.attrs["units"] = np.string_("-")
         ds.attrs["description"] = np.string_("""Quality figure [0.0..1.0] that indicates if the fit residual is too big (1.0), none (0.0), or somewhere inbetween.""")
 
+    #
+    # add version attributes to the database
+    #
+
+    fid.attrs["sdmfVersion"] = "3.2.1"
+    fid.attrs["swVersion"] = "1.0.1"
+    fid.attrs["calibVersion"] = "1.0.1"
+    fid.attrs["dbVersion"] = "1.0.0"
+
     fid.close()
 
     print("written.")

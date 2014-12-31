@@ -41,7 +41,7 @@ import numpy.ma as ma
 import h5py
 import ConfigParser
 
-from sciamachy_module import petcorr
+from sciamachy import petcorr
 from scia_dark_functions import scia_dark_fun1
 from envisat import PhaseConverter
 import config32
@@ -701,14 +701,14 @@ class SMRcalib:
             indx = 7 * smr.channelSize + np.arange(smr.channelSize)
             corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
 
-        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_short.h5', 'r' )
+        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_short_.h5', 'r' )
 #        fid_dc = h5py.File('vardark_short.h5', 'r')
         orbits_dc = fid_dc['dim_orbit'][:]
         idx_dc_orb = np.argmin(abs(orbits_dc - smr.absOrbit))
         ds_dc = fid_dc["varDark"] # vardark dataset
         phase_sz = fid_dc["dim_phase"].size
 
-        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_short.h5', 'r' )
+        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_short_.h5', 'r' )
 #        fid_ao = h5py.File('interpolated_monthlies_short.h5', 'r')
         orbits_ao = fid_ao['orbits'][:]
         idx_ao_orb = np.argmin(abs(orbits_ao - smr.absOrbit))
