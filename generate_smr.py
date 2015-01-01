@@ -701,6 +701,7 @@ class SMRcalib:
             indx = 7 * smr.channelSize + np.arange(smr.channelSize)
             corrsimu[indx] = ao + pet[indx] * (lc + orbvar * amp1)
 
+#        fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_long_.h5', 'r' )
         fid_dc = h5py.File( '/SCIA/SDMF31/pieter/vardark_short_.h5', 'r' )
 #        fid_dc = h5py.File('vardark_short.h5', 'r')
         orbits_dc = fid_dc['dim_orbit'][:]
@@ -708,6 +709,7 @@ class SMRcalib:
         ds_dc = fid_dc["varDark"] # vardark dataset
         phase_sz = fid_dc["dim_phase"].size
 
+#        fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_long_.h5', 'r' )
         fid_ao = h5py.File( '/SCIA/SDMF31/pieter/interpolated_monthlies_short_.h5', 'r' )
 #        fid_ao = h5py.File('interpolated_monthlies_short.h5', 'r')
         orbits_ao = fid_ao['orbits'][:]
@@ -1008,9 +1010,10 @@ class SMRcalib:
             try:
                 l1b = lv1.File( fileList[0] )
                 l1b.getSRS()
-            except scia_l1b.fmtError as e:
+            except Exception as e:
                 print( e.msg )
-                sys.exit(1)
+                return
+                #sys.exit(1)
 
             wv_interp = True
             smr.wvlen = np.array(l1b.srs['wavelength'][0])

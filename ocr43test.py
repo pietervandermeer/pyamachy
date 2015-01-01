@@ -26,6 +26,7 @@ phasebin = 10
 f = h5py.File("/SCIA/SDMF31/pieter/vardark_long_.h5","r")
 #f = h5py.File("vardark_long.h5","r")
 ds_vardark = f["varDark"]
+ds_uncertainty = f["uncertainties"]
 ds_orbits = f["dim_orbit"]
 idx = (ds_orbits[:] >= start) & (ds_orbits[:] <= end)
 if np.sum(idx) > 0:
@@ -33,6 +34,7 @@ if np.sum(idx) > 0:
 else:
     raise Exception("No orbits found")
 vd = ds_vardark[idx,phasebin,:]
+un = ds_uncertainty[idx,:]
 print(vd.shape)
 
 print(ds_vardark[idx,phasebin,pixnr])
@@ -62,10 +64,13 @@ print(aos.shape)
 
 plt.cla()
 fig = plt.figure()
-ax = fig.add_subplot(2,1,1)
-imgplot1 = ax.imshow(vd, cmap=cm.Greys_r, aspect="auto")
+ax = fig.add_subplot(3,1,1)
+imgplot1 = ax.imshow(np.log(vd), cmap=cm.Greys_r, aspect="auto")
 imgplot1.set_interpolation('nearest')
-ax2 = fig.add_subplot(2,1,2, sharex=ax, sharey=ax)
-imgplot2 = ax2.imshow(aos, cmap=cm.Greys_r, aspect="auto")
+ax2 = fig.add_subplot(3,1,2, sharex=ax, sharey=ax)
+imgplot2 = ax2.imshow(np.log(un), cmap=cm.Greys_r, aspect="auto")
 imgplot2.set_interpolation('nearest')
+ax3 = fig.add_subplot(3,1,3, sharex=ax, sharey=ax)
+imgplot3 = ax3.imshow(np.log(aos), cmap=cm.Greys_r, aspect="auto")
+imgplot3.set_interpolation('nearest')
 plt.show()
