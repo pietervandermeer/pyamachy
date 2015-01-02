@@ -156,6 +156,7 @@ class PlotPixelmaskEvolution():
         self.totalbad_wls = chanmasks_wls.sum(axis=1)
         self.totalbad_sun = chanmasks_sun.sum(axis=1)
         self.totalbad_com = chanmasks_com.sum(axis=1)
+
         self.totalbad_comf = chanmasks_comf.sum(axis=1)
         
         fmask.close()
@@ -191,7 +192,7 @@ class PlotPixelmaskEvolution():
             fig.set_xlim(ma-self.args.last_orbits,ma)
         if self.args.filter:
             fig.plot(orbits_,self.totalbad_comf[self.mask],color=self.cols[0],
-                        label='Total bad pixels (combined flag)')
+                        label='Bad pixels count (combined flag)')
             fig.plot(orbits_,self.totalbad_com[self.mask],color=self.cols[1],
                         label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls[self.mask],color=self.cols[2],
@@ -203,13 +204,13 @@ class PlotPixelmaskEvolution():
             fig.plot(orbits_,self.totalbad_err[self.mask],color=self.cols[5],
                         label='Total pixel quality (dark error)')
             fig.plot(orbits_,self.totalbad_res[self.mask],color=self.cols[6],
-                        label='Total pixel quality (residual)')
+                        label='Total pixel quality (dark residual)')
             fig.plot(orbits_,self.totalbad_sat[self.mask],color=self.cols[7],
                         label='Total pixel quality (saturated)')
         else:
             print(orbits_.size,self.totalbad_comf.size)
             fig.plot(orbits_,self.totalbad_comf,color=self.cols[0],
-                        label='Total bad pixels (combined flag)')
+                        label='Bad pixels count (combined flag)')
             fig.plot(orbits_,self.totalbad_com,color=self.cols[1],
                         label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls,color=self.cols[2],

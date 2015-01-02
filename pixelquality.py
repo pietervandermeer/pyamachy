@@ -312,7 +312,7 @@ class PixelQuality:
         #
 
         fname = self.cfg['db_dir']+self.cfg['dark_short_fname']
-        wave_phases, wave_orbit, darkcurrent_s, analogoffset_s, uncertainty = load_vardark_orbit(orbit, False, give_uncertainty=True, fname=fname)
+        wave_phases_s, wave_orbit_s, darkcurrent_s, analogoffset_s, uncertainty_s = load_vardark_orbit(orbit, False, give_uncertainty=True, fname=fname)
         # slice out a single phase, this is good enough for our purposes
         darkcurrent_s = darkcurrent_s[0,0,:].flatten()
         analogoffset_s = analogoffset_s.flatten()
@@ -462,7 +462,10 @@ class PixelQuality:
         # compute dark current error to darkcurrent ratio
         #
 
-        self.dc_err_figure = np.abs(darkcurrent / uncertainty)
+        ratio = np.abs(darkcurrent / uncertainty)
+        idxje = np.logical_not(np.isfinite(ratio))
+        ratio[idxje] = 0
+        self.dc_err_figure = ratio
         #print(self.dc_err_figure.shape)
         self.dc_err_figure = self.dc_err_figure.flatten() / 5000 # empirical scalar to get range normalized to [0..1], TODO: config file
         #print(self.dc_err_figure.shape)
@@ -472,12 +475,6 @@ class PixelQuality:
         # prepare for figures that require light measurements (and short vardark product)
         # TODO: disabled until vardark_short is available. SDMF3.1 dark fit will also work well on the short exposure times
         #
-
-        # fname = self.cfg['db_dir']+"pieter/vardark_short.h5"
-        # wave_phases_s, wave_orbit_s, darkcurrent_s, analogoffset_s = load_vardark_orbit(orbit, False, fname=fname)
-        # # slice out a single phase, this is good enough for our purposes
-        # darkcurrent_s = darkcurrent_s[0,0,:].flatten()
-        # analogoffset_s = analogoffset_s.flatten()
 
         #
         # compute wls figure
