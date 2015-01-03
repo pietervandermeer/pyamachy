@@ -5,6 +5,8 @@
 Plots evolution of SDMF 3.2 (smooth) pixel mask (channel 8 only).
 """
 
+from __future__ import division, print_function
+
 import ConfigParser
 import sys
 import argparse
@@ -81,7 +83,7 @@ class PlotPixelmaskEvolution():
         fmask.close()
 
         self.mask = self.orbfilter.get_monthly_orbit_filter(self.orbits)
-        self.mask &= self.orbfilter.get_quality_orbit_filter(self.orbits)
+        self.mask &= self.orbfilter.get_quality_orbit_filter(self.orbits, margin=100)
 
         #
         # get 8 distinct colour-blind friendly colours for scatter plot
@@ -127,7 +129,7 @@ class PlotPixelmaskEvolution():
             self.args.channel = value
             self.load()
         else:
-            print "unknown parameter "+name
+            print("unknown parameter "+name)
 
     # loads data and store it for use in 'plot' method.
     def load(self):
@@ -149,15 +151,15 @@ class PlotPixelmaskEvolution():
         chanmasks_com = (fmask['combined'])[:,:]
         chanmasks_comf = (fmask['combinedFlag'])[:,:]
         
-        self.totalbad_inv = chanmasks_inv.sum(axis=1)
-        self.totalbad_sat = chanmasks_sat.sum(axis=1)
-        self.totalbad_err = chanmasks_err.sum(axis=1)
-        self.totalbad_res = chanmasks_res.sum(axis=1)
-        self.totalbad_wls = chanmasks_wls.sum(axis=1)
-        self.totalbad_sun = chanmasks_sun.sum(axis=1)
-        self.totalbad_com = chanmasks_com.sum(axis=1)
+        self.totalbad_inv = chanmasks_inv.sum(axis=1) / 1024
+        self.totalbad_sat = chanmasks_sat.sum(axis=1) / 1024
+        self.totalbad_err = chanmasks_err.sum(axis=1) / 1024
+        self.totalbad_res = chanmasks_res.sum(axis=1) / 1024
+        self.totalbad_wls = chanmasks_wls.sum(axis=1) / 1024
+        self.totalbad_sun = chanmasks_sun.sum(axis=1) / 1024
+        self.totalbad_com = chanmasks_com.sum(axis=1) / 1024
 
-        self.totalbad_comf = chanmasks_comf.sum(axis=1)
+        self.totalbad_comf = chanmasks_comf.sum(axis=1) / 1024
         
         fmask.close()
         
@@ -186,13 +188,13 @@ class PlotPixelmaskEvolution():
         fig.cla()
         fig.set_title("Evolution of SDMF 3.2 pixel quality in channel 8\n\n")
         fig.set_xlabel("Orbit number")
-        fig.set_ylabel("Total bad pixels")
+        fig.set_ylabel("Pixel quality (channel mean)")
         if self.args.last_orbits > 0:
             ma = max(orbits_)
             fig.set_xlim(ma-self.args.last_orbits,ma)
         if self.args.filter:
             fig.plot(orbits_,self.totalbad_comf[self.mask],color=self.cols[0],
-                        label='Bad pixels count (combined flag)')
+                        label='Bad pixels count (combined flag)') #,marker='.',ls='none',markersize=1
             fig.plot(orbits_,self.totalbad_com[self.mask],color=self.cols[1],
                         label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls[self.mask],color=self.cols[2],
@@ -227,12 +229,16 @@ class PlotPixelmaskEvolution():
                         label='Total pixel quality (saturated)')
         if not hasattr(self, 'ax2'):
             self.ax2 = fig.twiny()
+        if not hasattr(self, 'ay2'):
+            self.ay2 = fig.twinx()
         self.ax2.set_xlabel("Date")
+        self.ay2.set_ylabel("Bad pixel count")
+        self.ay2.set_ylim((0,1024))
         dates = envisat.convert_orbit_to_jd(self.orbits)
         self.ax2.plot_date(dates,self.totalbad_com,visible=False)
         x1, x2 = fig.get_xlim()
         self.ax2.set_xlim(list(envisat.convert_orbit_to_jd((x1,x2))))
-        fig.set_ylim((0,1024))
+        fig.set_ylim((0,1.0))
         self.ax2.grid(True)
         #fig.grid(True,which='minor')
         if self.args.legend:

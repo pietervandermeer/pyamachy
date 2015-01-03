@@ -205,7 +205,7 @@ class orbitfilter:
         return dict
 
     # stamp out all the low-quality orbit ranges
-    def get_quality_orbit_filter(self, orbits):
+    def get_quality_orbit_filter(self, orbits, margin=0):
         mask = np.ones(orbits.size, dtype=bool)
         n_ranges = self.qualities.shape[0]
         for i in range(n_ranges):
@@ -213,7 +213,7 @@ class orbitfilter:
             end = self.qualities[i,1]
             #loc_mask = (orbits < start) | (orbits > end)
             #mask &= loc_mask
-            loc_idx = np.where((orbits >= start) & (orbits < end))
+            loc_idx = np.where((orbits >= start-margin) & (orbits < end+margin))
             mask[loc_idx] = False
         return mask
 

@@ -642,8 +642,8 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         plt.plot(xnew, full_wave, 'g-', lw=2)
         plt.plot(xnew, full_wave+full_err_ds, 'g-', lw=1)
         plt.plot(xnew, full_wave-full_err_ds, 'g-', lw=1)
-        plt.plot(xnew, simu30, 'p-')
-        plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct', 'rec upper', 'rec lower', 'simu'], loc='best')
+        #plt.plot(xnew, simu30, 'p-')
+        #plt.legend(['orig data', 'avg data', 'linear', 'cubic', 'reconstruct', 'rec upper', 'rec lower', 'simu'], loc='best')
         plt.show()
 
     return
@@ -717,8 +717,10 @@ if __name__ == "__main__":
         dbname = path+"/vardark_short.h5"
         input_dbname = path+"/interpolated_monthlies_short.h5"
     else:
-        pets = [1.0, 0.5, 0.125]
-        #pets = [1.0, 0.5]
+        if args.pixnr is None:
+            pets = [1.0, 0.5, 0.125]
+        else:
+            pets = [1.0, 0.5]
         print("PETs", pets)
         ad = AllDarks(pets)
         dbname = path+"/vardark_long.h5"

@@ -58,6 +58,8 @@ else:
 aos = ds_aos[idx,:]
 print(aos.shape)
 
+pixnr = 515
+
 if False:
     #2d plots
     plt.cla()
@@ -74,22 +76,34 @@ if False:
     plt.show()
 
 #1d
-pixnr = 515
-norm_dark = vd[:,pixnr]
-norm_dark -= np.mean(norm_dark)
-norm_dark /= np.max(np.abs(norm_dark))
-norm_un = un[:,pixnr]
-idx = np.logical_not(np.isfinite(norm_un))
-print(np.where(idx))
-norm_un = np.nan_to_num(norm_un)
-norm_un -= np.mean(norm_un)
-norm_un /= np.max(np.abs(norm_un))
-quo = vd[:,pixnr]/un[:,pixnr]
+if False:
+    norm_dark = vd[:,pixnr]
+    norm_dark -= np.mean(norm_dark)
+    norm_dark /= np.max(np.abs(norm_dark))
+    norm_un = un[:,pixnr]
+    idx = np.logical_not(np.isfinite(norm_un))
+    print(np.where(idx))
+    norm_un = np.nan_to_num(norm_un)
+    norm_un -= np.mean(norm_un)
+    norm_un /= np.max(np.abs(norm_un))
+    quo = vd[:,pixnr]/un[:,pixnr]
 
-plt.cla()
-plt.ticklabel_format(useOffset=False)
-plt.plot(orbits_vd, norm_dark, 'b-')
-plt.plot(orbits_vd, norm_un, 'r-')
-plt.plot(orbits_vd, quo, 'g-')
-plt.show()
+    plt.cla()
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits_vd, norm_dark, 'b-')
+    plt.plot(orbits_vd, norm_un, 'r-')
+    plt.plot(orbits_vd, quo, 'g-')
+    plt.show()
+
+if True:
+    mdat = np.ma.masked_array(vd,np.logical_not(np.isfinite(vd)))
+    vd_mean = np.mean(mdat,axis=1)
+    mdat = np.ma.masked_array(un,np.logical_not(np.isfinite(un)))
+    un_mean = np.mean(mdat,axis=1)
+    plt.cla()
+    plt.ticklabel_format(useOffset=False)
+    plt.plot(orbits_vd, vd_mean, 'b-')
+    plt.plot(orbits_vd, un_mean, 'r-')
+    plt.show()
+
 
