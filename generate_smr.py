@@ -196,7 +196,7 @@ def get_h5_RadSensMoni( NDF=True, debug=False ):
     ref_wl = dset[:]        # regrid all data to ref_wl instead of Sun spectrum
     dset = grp['ABS_RAD']
     abs_rad = dset[:].astype('float64')
-    abs_rad /= (5.035e8 * ref_wl * ppg0)
+    abs_rad /= (5.035e8 * ref_wl) # * ppg0)
     del(ppg0)
 
     grp = fid['OBM_s_p']
@@ -982,7 +982,7 @@ class SMRcalib:
         from pynadc.scia import db,lv1
         '''
         (7) Radiance correction, the light which the telescope recieved in 
-        the nadir direction, i.e. all the light comming from the Earth in the 
+        the nadir direction, i.e. all the light coming from the Earth in the 
         FoV.
         Parameters
         ----------
@@ -997,6 +997,9 @@ class SMRcalib:
         -----
         * error estimate not implemented
         '''
+
+        import matplotlib.pyplot as plt
+
         if verbose:
             print( '(7) Perform radiance correction' )
         smr.errorType = 'M'
@@ -1018,6 +1021,7 @@ class SMRcalib:
             wv_interp = True
             smr.wvlen = np.array(l1b.srs['wavelength'][0])
             l1b.__del__()
+            print("got l1b wvlen grid")
         else:
             wv_interp = False
             smr.wvlen = smr.rspm['wvlen']    # use rspm grid as approximation
@@ -1050,6 +1054,8 @@ class SMRcalib:
                 + frac_asm * smr.rspm['sensitivity'][0,ne+1,na+1,:]
             radsens = (1-frac_ele) * radsensAzi1 + frac_ele * radsensAzi2
 
+            #plt.plot(radsens[7*1024:], 'b.')
+
             if wv_interp:
                 tmp = radsens.copy()
                 for nc in range(smr.numChannels):
@@ -1060,7 +1066,15 @@ class SMRcalib:
                                                tmp[i_mn:i_mx] )
                 del(tmp)
 
+            #plt.cla()
+            #plt.plot(pet[7*1024:])
+            #plt.show()
             smr.spectra.data[no,:] /= (pet * radsens)
+
+        #for no in range(smr.numSpectra):
+        #    smr.spectra.data[no,:] /= (pet * radsens)
+
+        return
 
     def combineSpectra(self, smr, verbose=False):
         '''
@@ -1539,6 +1553,9 @@ def handleCmdParams():
                               default=None, help='show data of one pixel' )
     parser_show.add_argument( '--effect', action='store_true', default=False,
                               help='show effect of last calibration step' )
+    parser_show.add_argument('-d', '--darkVersion', default='vardark', 
+                           type=str, choices=("sdmf31", "simudark", "vardark"),
+                           help='dark current correction type')
     return parser.parse_args()
 
 # update_progress() : Displays or updates a console progress bar

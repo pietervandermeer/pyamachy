@@ -50,8 +50,8 @@ class Noise:
             post_ocr43_sid = get_darkstateid(self.pet, 43362)
             pre_range = [orbit_range[0], 43361]
             post_range = [43362, orbit_range[1]]
-            d1 = read_extracted_states_(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
-            d2 = read_extracted_states_(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+            d1 = read_extracted_states_ch8(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+            d2 = read_extracted_states_ch8(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
             c1 = d1['readoutCount'][:]
             c2 = d2['readoutCount'][:]
             self.count = np.concatenate((c1,c2))
@@ -63,7 +63,7 @@ class Noise:
             self.noise = np.concatenate((n1,n2))
         else:
             stateid = get_darkstateid(self.pet, orbit_range[0])
-            d = read_extracted_states_(orbit_range, stateid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+            d = read_extracted_states_ch8(orbit_range, stateid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
             self.count = d['readoutCount'][:]
             self.mjds = d['mtbl'][:]['julianDay']
             self.noise = d['readoutNoise'][:,:]

@@ -79,7 +79,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
         print(pet)
         print(coadd)
     
-    # small pets should not be taken veryseriously, unless specified or the rest is saturated..
+    # small pets should not be taken very seriously, unless specified or the rest is saturated..
     if not short:
         idx = pet < .49
         if np.sum(idx) > 0:
@@ -122,12 +122,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
             n = pix_readouts.size
 
-            # normalize sigmas
-            pix_sigmas /= np.sqrt(np.sum(pix_sigmas**2)*(n-7))
-            pix_sigmas *= 1000
-
             # pass a
-            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
             avg_residual = np.mean(residual)
@@ -137,7 +133,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 idx = (residual-avg_residual)**2 > 10.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 500
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
                 residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
                 dev_residual = np.std(residual)
                 avg_residual = np.mean(residual)
@@ -146,7 +142,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 idx = (residual-avg_residual)**2 > 5.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 500
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
 
             n_done += 1
         else:
@@ -204,12 +200,8 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
             n = pix_readouts.size
 
-            # normalize sigmas
-            pix_sigmas /= np.sqrt((np.sum(pix_sigmas**2))*(n-7))
-            pix_sigmas *= 1000
-
             # pass a
-            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
             avg_residual = np.mean(residual)
@@ -219,7 +211,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 idx = (residual-avg_residual)**2 > 10.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 500
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
                 residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
                 dev_residual = np.std(residual)
                 avg_residual = np.mean(residual)
@@ -228,7 +220,7 @@ def fit_monthly(alldarks, orbit, verbose=False, kappasigma=False, debug_pixnr=No
                 idx = (residual-avg_residual)**2 > 5.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 500
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
 
             n_done += 1
         else:
@@ -409,11 +401,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
             x = (ephases-orbit)[idx_fin], pet[idx_fin]
             n = pix_readouts.size
 
-            # normalize sigmas
-            #pix_sigmas /= np.sqrt((np.sum(pix_sigmas**2))*(n-2))
-            #pix_sigmas *= 1000
-
-            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, xtol=1e-8, parinfo=parinfo)
+            fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
             residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
             dev_residual = np.std(residual)
             avg_residual = np.mean(residual)
@@ -423,7 +411,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
                 idx = (residual-avg_residual)**2 > 10.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 50
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
                 residual = scia_dark_fun2(fitobj.params, x) - pix_readouts
                 dev_residual = np.std(residual)
                 avg_residual = np.mean(residual)
@@ -432,7 +420,7 @@ def fit_eclipse_orbit(alldarks, orbit, aos, lcs, amps, amp2, channel_phaseshift,
                 idx = (residual-avg_residual)**2 > 5.*dev_residual
                 if np.sum(idx) > 0:
                     pix_sigmas[idx] *= 50
-                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-8, parinfo=parinfo)
+                fitobj = kmpfit.simplefit(scia_dark_fun2, p0, x, pix_readouts, err=pix_sigmas, ftol=1e-10, parinfo=parinfo)
 
             n_done += 1
         else:
@@ -727,8 +715,8 @@ if __name__ == "__main__":
     #
 
     of = orbitfilter()
-    #orbit = of.get_next_monthly(43500) # late orbit.. loads of bad pixels to check out. 
-    orbit = of.get_next_monthly(5000) # special.. here monthlies have nothing but 0.5s.. you need neighbouring orbits to get the rest!
+    orbit = of.get_next_monthly(43500) # late orbit.. loads of bad pixels to check out. 
+    #orbit = of.get_next_monthly(5000) # special.. here monthlies have nothing but 0.5s.. you need neighbouring orbits to get the rest!
     print(orbit)
 
     ad = AllDarks([0.125, 0.5, 1.0])

@@ -194,17 +194,17 @@ class PlotPixelmaskEvolution():
             fig.set_xlim(ma-self.args.last_orbits,ma)
         if self.args.filter:
             fig.plot(orbits_,self.totalbad_comf[self.mask],color=self.cols[0],
-                        label='Bad pixels count (combined flag)') #,marker='.',ls='none',markersize=1
-            fig.plot(orbits_,self.totalbad_com[self.mask],color=self.cols[1],
-                        label='Total pixel quality (combined)')
+                        label='Bad pixel count (combined flag)') #,marker='.',ls='none',markersize=1
+#            fig.plot(orbits_,self.totalbad_com[self.mask],color=self.cols[1],
+#                        label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls[self.mask],color=self.cols[2],
                         label='Total pixel quality (WLS response)')
             fig.plot(orbits_,self.totalbad_sun[self.mask],color=self.cols[3],
                         label='Total pixel quality (Sun response)')
             fig.plot(orbits_,self.totalbad_inv[self.mask],color=self.cols[4],
                         label='Total pixel quality (invalid)')
-            fig.plot(orbits_,self.totalbad_err[self.mask],color=self.cols[5],
-                        label='Total pixel quality (dark error)')
+#            fig.plot(orbits_,self.totalbad_err[self.mask],color=self.cols[5],
+#                        label='Total pixel quality (dark error)')
             fig.plot(orbits_,self.totalbad_res[self.mask],color=self.cols[6],
                         label='Total pixel quality (dark residual)')
             fig.plot(orbits_,self.totalbad_sat[self.mask],color=self.cols[7],
@@ -212,17 +212,17 @@ class PlotPixelmaskEvolution():
         else:
             print(orbits_.size,self.totalbad_comf.size)
             fig.plot(orbits_,self.totalbad_comf,color=self.cols[0],
-                        label='Bad pixels count (combined flag)')
-            fig.plot(orbits_,self.totalbad_com,color=self.cols[1],
-                        label='Total pixel quality (combined)')
+                        label='Bad pixel count (combined flag)')
+#            fig.plot(orbits_,self.totalbad_com,color=self.cols[1],
+#                        label='Total pixel quality (combined)')
             fig.plot(orbits_,self.totalbad_wls,color=self.cols[2],
                         label='Total pixel quality (WLS response)')
             fig.plot(orbits_,self.totalbad_sun,color=self.cols[3],
                         label='Total pixel quality (Sun response)')
             fig.plot(orbits_,self.totalbad_inv,color=self.cols[4],
                         label='Total pixel quality (invalid)')
-            fig.plot(orbits_,self.totalbad_err,color=self.cols[5],
-                        label='Total pixel quality (dark error)')
+#            fig.plot(orbits_,self.totalbad_err,color=self.cols[5],
+#                        label='Total pixel quality (dark error)')
             fig.plot(orbits_,self.totalbad_res,color=self.cols[6],
                         label='Total pixel quality (dark residual)')
             fig.plot(orbits_,self.totalbad_sat,color=self.cols[7],
@@ -242,7 +242,7 @@ class PlotPixelmaskEvolution():
         self.ax2.grid(True)
         #fig.grid(True,which='minor')
         if self.args.legend:
-            fig.legend(loc='upper left', scatterpoints=10)
+            fig.legend(loc='lower right', scatterpoints=10)
             #fig.legend()
 
     # execute this when Show legend check box is clicked

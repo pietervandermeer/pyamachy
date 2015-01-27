@@ -11,8 +11,10 @@ idx = np.argmin(np.abs(ds_orbits[:] - orbit))
 print("esa idx", idx)
 esa_smr = (ds_sun[idx])[7*1024:]
 
-#f = h5py.File("sdmf_smr.h5","r")
-f = h5py.File("smr_test.h5","r")
+#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_123.h5","r")
+#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_full.h5","r")
+#f = h5py.File("smr_14009_1237.h5","r")
+f = h5py.File("smr_14009_12345678.h5","r")
 ds_orbits = f["orbitList"]
 ds_sun = f["smr"]
 idx = np.argmin(np.abs(ds_orbits[:] - orbit))
@@ -33,7 +35,7 @@ chosen_idx = good_idx
 
 plt.cla()
 plt.ticklabel_format(useOffset=False)
-plt.plot(chosen_idx, sdmf_smr[chosen_idx], 'r.', label="SDMF3.2")
 plt.plot(chosen_idx, esa_smr[chosen_idx], 'b.', label="ESA")
+plt.plot(chosen_idx, sdmf_smr[chosen_idx], 'r.', label="SDMF3.2")
 plt.legend(loc="best")
 plt.show()
