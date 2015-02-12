@@ -88,9 +88,6 @@ MODULE noise_reader
 
     CALL h5sget_simple_extent_dims_f(memspace_id, dim_out, maxdim_out, error)
     WRITE(*,*) "dim_out=", dim_out, "maxdim_out=", maxdim_out, "error=", error
-    CALL h5eprint_f(error) ! seems to indicate there is no error.. but '2' is not 0.. and well.. 
-
-    WRITE(*,*) "buffer allocated"
 
     CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, data, dim, error, file_space_id=filespace_id, mem_space_id=memspace_id)
     WRITE(*,*) "hyperslab read", dset_id, "error=", error
@@ -103,6 +100,7 @@ MODULE noise_reader
     CALL h5sclose_f(memspace_id, error)
     CALL h5sclose_f(filespace_id, error)
     CALL h5dclose_f(dset_id, error)
+    CALL h5gclose_f(group_id, error)
     CALL h5fclose_f(file_id, error)
     CALL h5close_f(error)
 

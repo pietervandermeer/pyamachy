@@ -19,6 +19,7 @@ c_flag_lnk = -L$(IFC_LIB) -L$(IFC_MKL_LIB) -lifport -lifcore -lstdc++ -lsvml -L/
 ff_flag_lnk = -L$(IFC_LIB) -L$(IFC_MKL_LIB) -lifport -lifcore -lstdc++ -lsvml -L/opt/local/EOS/nadc_extern/intel64/lib -L/opt/local/EOS/nadc_extern/intel64/lib -lhdf5_fortran -lhdf5_hl -lhdf5 -lz -L/usr/lib -lpthread
 
 FFOBJS =\
+	$(obj)mask_reader.o\
 	$(obj)noise_reader.o\
 	$(obj)main.o
 
@@ -44,6 +45,9 @@ $(obj)main.o: $(src)main.f90
 
 $(obj)noise_reader.o:  $(src)noise_reader.f90
 	$(cff) $(ff_flag_obj) $(src)noise_reader.f90 -o $(obj)noise_reader.o
+     
+$(obj)mask_reader.o:  $(src)mask_reader.f90
+	$(cff) $(ff_flag_obj) $(src)mask_reader.f90 -o $(obj)mask_reader.o
      
 %.o: %.f
 	$(cff) $(FFLAGS) $<
