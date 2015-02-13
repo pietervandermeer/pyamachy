@@ -7,6 +7,7 @@ MODULE noise_reader
 
   CONTAINS
 
+  ! read a single orbit of the noise product (channel 8 only)
   ! orbit: absolute orbit [1..53000]
   ! pet_id: 0,1,2 -> (0.125s, 0.5s, 1.0s)
   SUBROUTINE read_noise(orbit, pet_id, data, error) 

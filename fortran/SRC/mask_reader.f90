@@ -7,6 +7,7 @@ MODULE mask_reader
 
   CONTAINS
 
+  ! read pixel mask for a single orbit (channel 8)
   ! orbit: absolute orbit [1..53000]
   SUBROUTINE read_mask(orbit, data, error) 
     INTEGER, INTENT(IN) :: orbit
@@ -44,7 +45,7 @@ MODULE mask_reader
 
     CALL get_orbit_index(file_id, orbit, index)
 
-    WRITE(*,*) "index ", index
+    WRITE(*,*) "index= ", index
 
     IF (index < 0) THEN
         WRITE(*,*) "orbit ", orbit," not found!"
