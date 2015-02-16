@@ -6,8 +6,8 @@ src = SRC/
 mod = MODULES/
 
 #Fortran compiler
-#cff = ifort -O3 -fpe0
-cff = ifort -O3
+cff = ifort -O3 -fpe0
+#cff = ifort -O3
 #cff = ifort  -check bounds -fp-stack-check -debug-parameters all -traceback -ftrapuv -g -fpe0
 #cff = ifort -g -mcmodel medium -shared-intel -debug -CB -check bounds -check pointer -check uninit -traceback
 ff_flag_obj = -c -module $(mod) -I$(mod) -I/opt/local/EOS/nadc_extern/intel64/include 
@@ -20,6 +20,7 @@ c_flag_lnk = -L$(IFC_LIB) -L$(IFC_MKL_LIB) -lifport -lifcore -lstdc++ -lsvml -L/
 ff_flag_lnk = -L$(IFC_LIB) -L$(IFC_MKL_LIB) -lifport -lifcore -lstdc++ -lsvml -L/opt/local/EOS/nadc_extern/intel64/lib -L/opt/local/EOS/nadc_extern/intel64/lib -lhdf5_fortran -lhdf5_hl -lhdf5 -lz -L/usr/lib -lpthread
 
 FFOBJS =\
+	$(obj)dark_reader.o\
 	$(obj)mask_reader.o\
 	$(obj)noise_reader.o\
 	$(obj)smr_reader.o\
@@ -50,9 +51,12 @@ $(obj)noise_reader.o:  $(src)noise_reader.f90
      
 $(obj)mask_reader.o:  $(src)mask_reader.f90
 	$(cff) $(ff_flag_obj) $(src)mask_reader.f90 -o $(obj)mask_reader.o
-     
+
 $(obj)smr_reader.o:  $(src)smr_reader.f90
 	$(cff) $(ff_flag_obj) $(src)smr_reader.f90 -o $(obj)smr_reader.o
+     
+$(obj)dark_reader.o:  $(src)dark_reader.f90
+	$(cff) $(ff_flag_obj) $(src)dark_reader.f90 -o $(obj)dark_reader.o
      
 %.o: %.f
 	$(cff) $(FFLAGS) $<

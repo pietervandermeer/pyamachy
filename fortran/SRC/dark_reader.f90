@@ -1,24 +1,25 @@
-MODULE smr_reader
+MODULE dark_reader
   USE hdf5
 
   IMPLICIT NONE
 
   CONTAINS
 
-  SUBROUTINE read_from_dset(group_id, dset_name, index, buf, error)
+  SUBROUTINE read_from_dset(group_id, dset_name, index, phase_index, buf, error)
     INTEGER(HID_T), INTENT(IN) :: group_id
     CHARACTER(LEN=*), INTENT(IN) :: dset_name
-    INTEGER(HSIZE_T), INTENT(IN) :: index
-    REAL(8), DIMENSION(8192), INTENT(OUT) :: buf
+    INTEGER(HSIZE_T), INTENT(IN) :: index, phase_index
+    REAL(8), DIMENSION(1024), INTENT(OUT) :: buf
     INTEGER, INTENT(OUT) :: error
 
-    INTEGER(HSIZE_T), DIMENSION(1:2) :: dim, dim_, dim_out, maxdim_out
-    INTEGER(HSIZE_T), DIMENSION(1:2) :: file_slab_start, file_slab_count, file_slab_stride, file_slab_block, mem_2d_start
+    REAL(8), DIMENSION(1024,2) :: buf_intern
+    INTEGER(HSIZE_T), DIMENSION(1:3) :: dim, dim_, dim_out, maxdim_out
+    INTEGER(HSIZE_T), DIMENSION(1:3) :: file_slab_start, file_slab_count, file_slab_stride, file_slab_block, mem_2d_start
     INTEGER(HSIZE_T), DIMENSION(1) :: mem_slab_start, mem_slab_count
     INTEGER(HID_T) :: dset_id, memspace_id, filespace_id, xfer_prp
 
-    dim=(/8192,1/)
-    dim_=(/1,8192/)
+    ! pixel, phase, orbit. 2 phase bins, because we'll use linear interpolation
+    dim=(/1024,2,1/)
 
     CALL h5dopen_f(group_id, TRIM(dset_name), dset_id, error)
     IF (error < 0) THEN
@@ -34,12 +35,12 @@ MODULE smr_reader
     WRITE(*,*) "got filespace", filespace_id, "error=", error
 
     !
-    ! Select hyperslab in dataset (a single orbit x 8192 pixels).
+    ! Select hyperslab in dataset (a single orbit, single phase x 1024 pixels).
     !
 
-    file_slab_start = (/0,INT(index)/)
-    file_slab_count = (/1,1/)
-    file_slab_stride = (/1,1/)
+    file_slab_start = (/0,INT(phase_index),INT(index)/)
+    file_slab_count = (/1,1,1/)
+    file_slab_stride = (/1,1,1/)
     file_slab_block = dim
     CALL h5sselect_hyperslab_f(filespace_id, H5S_SELECT_SET_F, file_slab_start, file_slab_count, error, file_slab_stride, file_slab_block)
     WRITE(*,*) "file hyperslab selected, error=", error
@@ -57,7 +58,7 @@ MODULE smr_reader
     CALL h5sget_simple_extent_dims_f(memspace_id, dim_out, maxdim_out, error)
     WRITE(*,*) "dim_out=", dim_out, "maxdim_out=", maxdim_out, "error=", error
 
-    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, buf, dim, error, file_space_id=filespace_id, mem_space_id=memspace_id)
+    CALL h5dread_f(dset_id, H5T_NATIVE_DOUBLE, buf_intern, dim, error, file_space_id=filespace_id, mem_space_id=memspace_id)
     WRITE(*,*) "hyperslab read", dset_id, "error=", error
 
     IF (error < 0) THEN
@@ -65,28 +66,31 @@ MODULE smr_reader
         RETURN
     ENDIF
 
+    ! TODO: linear interpolation
+    buf = buf_intern(:,1)
+
     CALL h5sclose_f(memspace_id, error)
     CALL h5sclose_f(filespace_id, error)
     CALL h5dclose_f(dset_id, error)
 
   END SUBROUTINE read_from_dset
 
-  ! read sun-mean-reference spectrum for a single orbit (all channels)
+  ! read dark spectrum for a single orbit (channel 8)
   ! orbit: absolute orbit [1..53000]
-  ! file_name: name of existing smr database
-  ! smr: the smr data
-  ! errors: errors on the smr data
-  ! variances: variances on the smr data
+  ! phase: orbital phase (eclipse definition)
+  ! dark: the dark spectrum
+  ! dark_errors: errors on the dark data
   ! error: error return code
-  SUBROUTINE read_smr(orbit, file_name, smr, errors, variances, error) 
+  SUBROUTINE read_dark(orbit, phase, file_name, dark, dark_errors, error) 
     INTEGER, INTENT(IN) :: orbit
-    CHARACTER(LEN=256), INTENT(IN) :: file_name
-    REAL(8), DIMENSION(8192), INTENT(OUT) :: smr, errors, variances
+    REAL(8), INTENT(IN) :: phase
+    CHARACTER(LEN=256), INTENT(IN) :: file_name 
+    REAL(8), DIMENSION(1024), INTENT(OUT) :: dark, dark_errors
     INTEGER, INTENT(OUT) :: error
 
     INTEGER(HID_T) :: file_id
     CHARACTER(LEN=16) :: group_name, dataset_name
-    INTEGER(HSIZE_T) :: index
+    INTEGER(HSIZE_T) :: index, phase_index
 
     CALL h5open_f(error)
     IF (error < 0) THEN
@@ -114,20 +118,17 @@ MODULE smr_reader
         RETURN
     ENDIF
 
-    dataset_name = "smr"
-    CALL read_from_dset(file_id, dataset_name, index, smr, error)
+    phase_index = int(phase * 50.) ! 50 phase bins
+    WRITE(*,*) "phase_index = ", phase_index
+
+    dataset_name = "varDark"
+    CALL read_from_dset(file_id, dataset_name, index, phase_index, dark, error)
     IF (error < 0) THEN
         WRITE(*,*) "failed to read from:", dataset_name
         RETURN
     ENDIF
-    dataset_name = "smrError"
-    CALL read_from_dset(file_id, dataset_name, index, errors, error)
-    IF (error < 0) THEN
-        WRITE(*,*) "failed to read from:", dataset_name
-        RETURN
-    ENDIF
-    dataset_name = "smrVariance"
-    CALL read_from_dset(file_id, dataset_name, index, variances, error)
+    dataset_name = "errorVarDark"
+    CALL read_from_dset(file_id, dataset_name, index, phase_index, dark_errors, error)
     IF (error < 0) THEN
         WRITE(*,*) "failed to read from:", dataset_name
         RETURN
@@ -136,7 +137,7 @@ MODULE smr_reader
     CALL h5fclose_f(file_id, error)
     CALL h5close_f(error)
 
-  END SUBROUTINE read_smr
+  END SUBROUTINE read_dark
 
   ! orbit: absolute orbit [1..53000]
   ! index: index in orbit list (and other datasets)
@@ -150,7 +151,7 @@ MODULE smr_reader
     INTEGER(HSIZE_T), DIMENSION(1) :: dim, maxdim
     LOGICAL :: orbit_found = .FALSE.
 
-    CALL h5dopen_f(group_id, "orbitList", dset_id, error)
+    CALL h5dopen_f(group_id, "dim_orbit", dset_id, error)
 
     CALL h5dget_space_f(dset_id, space_id, error)
 
@@ -192,4 +193,4 @@ MODULE smr_reader
 
   END SUBROUTINE get_orbit_index
 
-END MODULE smr_reader
+END MODULE dark_reader
