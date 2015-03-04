@@ -23,8 +23,10 @@ FFOBJS =\
 	$(obj)dark_reader.o\
 	$(obj)mask_reader.o\
 	$(obj)noise_reader.o\
+	$(obj)analogoffset_reader.o\
 	$(obj)smr_reader.o\
 	$(obj)main.o
+#	$(obj)sdmf_class.o
 
 all: $(exe)
 
@@ -48,6 +50,9 @@ $(obj)main.o: $(src)main.f90
 
 $(obj)noise_reader.o:  $(src)noise_reader.f90
 	$(cff) $(ff_flag_obj) $(src)noise_reader.f90 -o $(obj)noise_reader.o
+
+$(obj)analogoffset_reader.o:  $(src)analogoffset_reader.f90
+	$(cff) $(ff_flag_obj) $(src)analogoffset_reader.f90 -o $(obj)analogoffset_reader.o
      
 $(obj)mask_reader.o:  $(src)mask_reader.f90
 	$(cff) $(ff_flag_obj) $(src)mask_reader.f90 -o $(obj)mask_reader.o
@@ -57,6 +62,9 @@ $(obj)smr_reader.o:  $(src)smr_reader.f90
      
 $(obj)dark_reader.o:  $(src)dark_reader.f90
 	$(cff) $(ff_flag_obj) $(src)dark_reader.f90 -o $(obj)dark_reader.o
+     
+$(obj)sdmf_class.o:  $(src)sdmf_class.f90
+	$(cff) $(ff_flag_obj) $(src)sdmf_class.f90 -o $(obj)sdmf_class.o
      
 %.o: %.f
 	$(cff) $(FFLAGS) $<

@@ -3,7 +3,7 @@
 
 """
 functions and classes related to SCIAMACHY operation and instrument
-2011, 2014 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
+2011, 2014, 2015 - Pieter van der Meer - SRON - Netherlands Institute for Space Research
 """
 
 from __future__ import print_function, division
@@ -413,7 +413,7 @@ def read_extracted_states(orbitrange, state_id, calib_db, in_orbitlist=None, rea
 
 def read_extracted_states_ch8(orbitrange, state_id, calib_db, 
                               in_orbitlist=None, readoutMean=False, readoutNoise=False, 
-                              orbitList=False, readoutCount=False, errorInTheMean=True):
+                              orbitList=False, readoutCount=False, errorInTheMean=True, columnOrder30=False):
     """
     reads extracted state executions from database (channel 8 only)
 
@@ -438,6 +438,8 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
         if set, returns readout counts. "readoutCount" in returned dict. 
     errorInTheMean : boolean, optional
         if set, returns error-in-the-mean in place of noise
+    columnOrder30 : boolean, optional
+        if set, expects data to use SDMF3.0 row,column ordering
 
     Returns
     -------
@@ -477,19 +479,32 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
 
     if readoutMean:
         ds_did      = gid['readoutMean']
-        dict['readoutMean'] = ds_did[metaindx,7*1024:]
+        if columnOrder30:
+            dict['readoutMean'] = np.transpose(ds_did[7*1024:,metaindx])
+        else:
+            dict['readoutMean'] = ds_did[metaindx,7*1024:]
 
     if readoutCount:
         ds_did = gid['readoutCount']
-        dict['readoutCount'] = ds_did[metaindx,7*1024:]
+        if columnOrder30:
+            dict['readoutCount'] = np.transpose(ds_did[7*1024:,metaindx])
+        else:
+            dict['readoutCount'] = ds_did[metaindx,7*1024:]
 
     # export error-in-the-mean instead of plain stddev.
     if readoutNoise:
         ds_did       = gid['readoutNoise']
-        readoutNoise = ds_did[metaindx,7*1024:]
+        if columnOrder30:
+            readoutNoise = np.transpose(ds_did[7*1024:,metaindx])
+        else:
+            readoutNoise = ds_did[metaindx,7*1024:]
+
         if errorInTheMean:
             ds_did       = gid['readoutCount']
-            readoutNoise /= np.sqrt(ds_did[metaindx,7*1024:])
+            if columnOrder30:
+                readoutNoise /= np.transpose(np.sqrt(ds_did[7*1024:, metaindx]))
+            else:
+                readoutNoise /= np.sqrt(ds_did[metaindx,7*1024:])
         readoutNoise *= 1.4826 # sigma = MAD * K 
         dict['readoutNoise'] = readoutNoise
 
@@ -502,6 +517,9 @@ def read_extracted_states_ch8(orbitrange, state_id, calib_db,
     # NOTE: when dealing with multiple cluster definitions, it takes the last one..
     # TODO: orbitlist_in not supported
     #
+
+    if columnOrder30:
+        return(dict)
 
     orbit = orbitrange[0]
     clusoff1 = [0,10,1014,1024]

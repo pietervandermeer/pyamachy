@@ -3,12 +3,16 @@ PROGRAM test_hdf5
     USE mask_reader
     USE smr_reader
     USE dark_reader
+    USE analogoffset_reader
 
     IMPLICIT NONE
 
     !
     ! variables
     !
+
+    CHARACTER(LEN=256) :: intmonthlies_name = "/SCIA/SDMF31/pieter/interpolated_monthlies_long__.h5"
+    !CHARACTER(LEN=256) :: intmonthlies = "/SCIA/SDMF31/pieter/interpolated_monthlies_short__.h5"
 
     ! dark database for short or long exposure times, (long for earthshine, short for smr)
     CHARACTER(LEN=256) :: dark_name = "/SCIA/SDMF31/pieter/vardark_long__.h5"
@@ -29,7 +33,7 @@ PROGRAM test_hdf5
     ! smr array, errors, variance
     REAL(8), DIMENSION(8192) :: smr, smr_errors, smr_var
     ! dark array, errors
-    REAL(8), DIMENSION(1024) :: dark, dark_errors
+    REAL(8), DIMENSION(1024) :: dark, dark_errors, analog_offset, ao_errors
     REAL(8) :: orbit_phase
     ! error code
     INTEGER :: error
@@ -50,5 +54,10 @@ PROGRAM test_hdf5
 
     CALL read_dark(9000, orbit_phase, dark_name, dark, dark_errors, error)
     WRITE(*,*) dark
+    WRITE(*,*) dark_errors
+
+    CALL read_analogoffset(9000, intmonthlies_name, analog_offset, ao_errors, error)
+    WRITE(*,*) analog_offset
+    WRITE(*,*) ao_errors
 
 END PROGRAM test_hdf5

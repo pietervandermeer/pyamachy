@@ -18,13 +18,13 @@ import pickle
 import numpy as np 
 import h5py
 
-from sciamachy import get_darkstateid, read_extracted_states_
+from sciamachy import get_darkstateid, read_extracted_states_ch8
 from envisat import PhaseConverter
 
 #-- globals --------------------------------------------------------------------
 
 n_pix = 1024
-
+use_sdmf_30 = True # use SDMF3.0 data? use SDMF3.1 otherwise
 # storage method. interesting.. pickle is incompatible with ctypes.. so never mind.. 
 #storage_method = 's' # pickle string
 #storage_method = 'p' # pickle binary file
@@ -35,7 +35,10 @@ storage_method = 'h' # hdf5
 class Noise:
     def __init__(self, pet):
         self.pet = pet
-        self.calib_db = '/SCIA/SDMF31/sdmf_extract_calib.h5'
+        if use_sdmf_30:
+            self.calib_db = '/SCIA/SDMF30/sdmf_extract.h5' # SDMF 3.0
+        else:
+            self.calib_db = '/SCIA/SDMF31/sdmf_extract_calib.h5' # SDMF 3.1
         self.pc = PhaseConverter()
 
     # extract noise data from sdmf_extract_calib database
@@ -50,8 +53,8 @@ class Noise:
             post_ocr43_sid = get_darkstateid(self.pet, 43362)
             pre_range = [orbit_range[0], 43361]
             post_range = [43362, orbit_range[1]]
-            d1 = read_extracted_states_ch8(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
-            d2 = read_extracted_states_ch8(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+            d1 = read_extracted_states_ch8(pre_range, pre_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True, columnOrder30=True)
+            d2 = read_extracted_states_ch8(post_range, post_ocr43_sid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True, columnOrder30=True)
             c1 = d1['readoutCount'][:]
             c2 = d2['readoutCount'][:]
             self.count = np.concatenate((c1,c2))
@@ -63,7 +66,7 @@ class Noise:
             self.noise = np.concatenate((n1,n2))
         else:
             stateid = get_darkstateid(self.pet, orbit_range[0])
-            d = read_extracted_states_ch8(orbit_range, stateid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True)
+            d = read_extracted_states_ch8(orbit_range, stateid, self.calib_db, readoutNoise=True, errorInTheMean=False, readoutCount=True, columnOrder30=True)
             self.count = d['readoutCount'][:]
             self.mjds = d['mtbl'][:]['julianDay']
             self.noise = d['readoutNoise'][:,:]
@@ -93,6 +96,7 @@ class Noise:
         idx = np.argsort(self.mjds)
         self.mjds = self.mjds[idx]
         self.orbits = self.orbits[idx]
+        print(self.noise.shape)
         self.noise = self.noise[idx,:]
         self.count = self.count[idx,:]
 
