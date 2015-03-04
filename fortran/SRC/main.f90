@@ -12,7 +12,7 @@ PROGRAM test_hdf5
     !
 
     CHARACTER(LEN=256) :: intmonthlies_name = "/SCIA/SDMF31/pieter/interpolated_monthlies_long__.h5"
-    !CHARACTER(LEN=256) :: intmonthlies = "/SCIA/SDMF31/pieter/interpolated_monthlies_short__.h5"
+    !CHARACTER(LEN=256) :: intmonthlies_name = "/SCIA/SDMF31/pieter/interpolated_monthlies_short__.h5"
 
     ! dark database for short or long exposure times, (long for earthshine, short for smr)
     CHARACTER(LEN=256) :: dark_name = "/SCIA/SDMF31/pieter/vardark_long__.h5"
