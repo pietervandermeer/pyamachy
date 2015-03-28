@@ -1,10 +1,13 @@
 from __future__ import print_function, division
 
+import sys
 import matplotlib.pyplot as plt
 import numpy as np 
 import h5py
 
-orbit = 9000
+#orbit = 9000
+orbit = 51990
+#orbit = 52000
 
 #
 # read SDMF 3.2 data
@@ -16,10 +19,26 @@ vd_fid = h5py.File(vd_fname,"r")
 ao_fid = h5py.File(ao_fname,"r")
 vd_dset = vd_fid["varDark"]
 vd_orb_idx = vd_fid["dim_orbit"][:] == orbit
-vd = vd_dset[vd_orb_idx, 10, :].flatten()
+if (np.any(vd_orb_idx)):
+	vd_orb_idx = np.where(vd_orb_idx)[0]
+	print(vd_orb_idx)
+	#vd = vd_dset[vd_orb_idx, 10, :].flatten()
+	sl = vd_dset[vd_orb_idx, 10, :]
+	vd = sl.flatten()
+else:
+	print("orbit "+str(orbit)+" not found in "+vd_fname)
+	sys.exit(1)
+
 ao_dset = ao_fid["aos"]
 ao_orb_idx = ao_fid["orbits"][:] == orbit
-ao = ao_dset[ao_orb_idx, :].flatten()
+if (np.any(ao_orb_idx)):
+	ao_orb_idx = np.where(ao_orb_idx)[0]
+	print(ao_orb_idx)
+	ao = (ao_dset[ao_orb_idx, :]).flatten()
+else:
+	print("orbit "+str(orbit)+" not found in "+ao_fname)
+	sys.exit(1)
+
 print(ao.shape,vd.shape)
 
 #

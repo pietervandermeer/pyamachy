@@ -603,7 +603,7 @@ class NoiseModel:
         pet: float
             pixel exposure time
         adc: float
-            detectore filling, excluding analog offset
+            detector filling, excluding analog offset
         coaddf: int, optional
             co-adding factor, default = 1
         give_shotnoise: bool, optional
