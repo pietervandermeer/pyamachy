@@ -64,9 +64,9 @@ def interpolate_monthlies(db_out_name, db_in_name):
     monthlies = fin["orbits"]
     #n_orbits = monthlies[-1] - monthlies[0]
     #orblist = np.arange(monthlies[0], monthlies[-1])
-    n_orbits = 51996 - monthlies[0] # also include last orbits, beyond last monthly calibration orbit
+    n_orbits = 52857 - monthlies[0] # also include last orbits, beyond last monthly calibration orbit
     print("n_orbits=",n_orbits)
-    orblist = np.arange(monthlies[0], 51996)
+    orblist = np.arange(monthlies[0], 52857)
     aos_dset = fin["aos"]
     off_dset = fin["off"]
     amps_dset = fin["amps"]

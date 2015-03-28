@@ -173,7 +173,8 @@ class orbitfilter:
         #
 
         # easy peasy
-        full_monthlies_fname = self.cfg['db_dir']+self.cfg['monthlies_fname']
+#        full_monthlies_fname = self.cfg['db_dir']+self.cfg['monthlies_fname']
+        full_monthlies_fname = "monthly_calib_list.txt"
         # this one is tricky since it contains ranges along with HK info
         full_quality_fname   = self.cfg['db_dir']+self.cfg['quality_fname']
         self.monthlies = np.loadtxt(full_monthlies_fname, dtype=int)
