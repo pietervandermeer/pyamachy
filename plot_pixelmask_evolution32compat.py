@@ -15,7 +15,7 @@ import wx
 
 from viewers import GUIViewer, DumpingViewer
 import envisat
-import sciamachy_module
+import sciamachy
 import distinct_colours
 
 #- functions -------------------------------------------------------------------
@@ -74,7 +74,7 @@ class PlotPixelmaskEvolution():
         #c = numpy.in1d(ideal_orbits, self.orbits)
         #print 'number of orbits present (ideally 46000) = ', c.sum()
 
-        self.orbfilter = sciamachy_module.orbitfilter()
+        self.orbfilter = sciamachy.orbitfilter()
         fname = "/SCIA/SDMF31/pieter/sdmf_smooth_pyxelmask30.h5" #self.cfg['db_dir']+self.cfg['pixelmask_fname']
         fmask = h5py.File(fname, 'r')
         self.orbits = (fmask['orbits'])[:]
@@ -183,7 +183,7 @@ class PlotPixelmaskEvolution():
         #
         
         fig.cla()
-        fig.set_title("Evolution of SDMF 3.2 pixel quality in channel 8\n\n")
+        fig.set_title("Evolution of SDMF 3.0* pixel quality in channel 8\n\n")
         fig.set_xlabel("Orbit number")
         fig.set_ylabel("Total bad pixels")
         if self.args.last_orbits > 0:

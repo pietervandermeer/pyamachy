@@ -6,15 +6,17 @@ import numpy as np
 import h5py
 
 #orbit = 9000
-orbit = 51990
-#orbit = 52000
+#orbit = 51990
+orbit = 52300
 
 #
 # read SDMF 3.2 data
 #
 
-vd_fname = "/SCIA/SDMF31/pieter/vardark_long__.h5"
-ao_fname = "/SCIA/SDMF31/pieter/interpolated_monthlies_long__.h5"
+#vd_fname = "/SCIA/SDMF31/pieter/vardark_long__.h5"
+#ao_fname = "/SCIA/SDMF31/pieter/interpolated_monthlies_long__.h5"
+vd_fname = "/SCIA/SDMF31/pieter/vardark_long_mar2015.h5"
+ao_fname = "/SCIA/SDMF31/pieter/interpolated_monthlies_long_mar2015.h5"
 vd_fid = h5py.File(vd_fname,"r")
 ao_fid = h5py.File(ao_fname,"r")
 vd_dset = vd_fid["varDark"]
@@ -58,6 +60,7 @@ dark = (ao_dset[:,orb30_idx] + 0.5*lc_dset[:,orb30_idx]).flatten() # no orbvar y
 
 pix_axis = np.arange(1024)
 plt.cla()
-plt.plot(pix_axis, ao+vd*.5, 'b.')
-plt.plot(pix_axis, dark, 'g.')
+plt.plot(pix_axis, ao+vd*.5, 'b.', label="3.2")
+plt.plot(pix_axis, dark, 'r.', label="3.0")
+plt.legend()
 plt.show()

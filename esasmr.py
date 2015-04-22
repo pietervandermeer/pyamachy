@@ -4,9 +4,10 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-#orbit = 52857
+orbit = 52843
 #orbit = 14000
-orbit = 52000
+#orbit = 51990
+#orbit = 52400
 
 #
 # ESA
@@ -23,9 +24,9 @@ esa_smr = (ds_sun[idx])[7*1024:]
 # SDMF SMR 3.2
 #
 
-#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_123_.h5","r")
-#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_raw_.h5","r")
-f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_12_.h5","r")
+f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_123_mar2015.h5","r")
+#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_raw_mar2015.h5","r")
+#f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_12_mar2015.h5","r")
 #f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smr_full.h5","r")
 #f = h5py.File("smr_14009_1237.h5","r")
 #f = h5py.File("smr_14009_12345678.h5","r")
@@ -60,7 +61,7 @@ smr30_orbit = ds_orbits[idx]
 print("sdmf30 idx", idx, "smr orbit", smr30_orbit)
 sdmf30_smr = ds_sun[7*1024:,idx] # * 5e9
 
-f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smooth_pyxelmask32_.h5")
+f = h5py.File("/SCIA/SDMF31/pieter/sdmf_smooth_pyxelmask32_mar2015.h5")
 ds_orbits = f["orbits"]
 idx = np.argmin(np.abs(ds_orbits[:] - orbit))
 print("mask idx", idx)

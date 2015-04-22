@@ -534,6 +534,12 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
     i = 0
     dummy_uncertainties = np.empty([n_pix])
     dummy_uncertainties[:] = np.nan
+    print("xnew")
+    for xcoord_ in xnew:
+        print(xcoord_) 
+    print("f")
+    for f_ in f(xnew):
+        print(f_)
     for orbit in range(int(ximin), int(ximax)):
         out_orblist = np.append(out_orblist, orbit)
         print(orbit)
@@ -636,6 +642,21 @@ def generate_vardark(vddb, ad, input_dbname, first_orbit, last_orbit, pixnr=None
         plt.xlabel("Orbit number")
         plt.ylabel("Dark current (BU/s)")
         plt.errorbar(plot_x, plot_y, yerr=plot_yerr, fmt='bo')
+#        print("plot_x")
+#        for x_ in plot_x:
+#            print(x_)
+#        print("plot_y")
+#        for y_ in plot_y:
+#            print(y_)
+#        print("plot_yerr")
+#        for yerr_ in plot_yerr:
+#            print(yerr_)
+        print("phi")
+        for phi_ in trending_phis:
+            print(phi_)
+        print("y")
+        for y_ in trending_ys[:,pixnr]:
+            print(y_)
         plt.plot(trending_phis, trending_ys[:,pixnr], 'ro', 
                  xnew, f(xnew), 'r-', 
                  xnew, f2(xnew), 'r--')
