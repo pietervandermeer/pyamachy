@@ -229,7 +229,7 @@ if __name__ == "__main__":
                         default="INFO", help="logging level")
     parser.add_argument('-o', '--output', dest='output_fname', type=str, 
                         help="output file name")
-    parser.add_argument('-c', action='store_true', dest="sdmf30_compat")
+    parser.add_argument('-c', action='store_true', dest="sdmf30_compat", help="sdmf3.0 compatibility")
     parser.add_argument('--config', dest='config_file', type=file, 
                         default='default3.2.cfg')
     parser.add_argument('-v', '--verbose', dest='verbose', 
