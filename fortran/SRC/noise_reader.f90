@@ -3,16 +3,26 @@ MODULE noise_reader
 
   IMPLICIT NONE
 
-  CHARACTER(LEN=256) :: file_name = "/SCIA/SDMF31/pieter/noise.h5"
+!  CHARACTER(LEN=256) :: file_name = "/SCIA/SDMF31/pieter/noise.h5"
+  CHARACTER(LEN=256) :: file_name = "/SCIA/SDMF31/pieter/noise30.h5"
 
   CONTAINS
+
+  ! threshold noise numbers to flags
+  SUBROUTINE threshold_noise(data, threshold, flags)
+    REAL(8), DIMENSION(1024), INTENT(IN) :: data
+    REAL(8), INTENT(IN) :: threshold
+    LOGICAL, DIMENSION(1024), INTENT(OUT) :: flags
+
+    flags = data < threshold
+  END SUBROUTINE threshold_noise
 
   ! read a single orbit of the noise product (channel 8 only)
   ! orbit: absolute orbit [1..53000]
   ! pet_id: 0,1,2 -> (0.125s, 0.5s, 1.0s)
   SUBROUTINE read_noise(orbit, pet_id, data, error) 
     INTEGER, INTENT(IN) :: orbit, pet_id
-    REAL(8), DIMENSION(:), INTENT(INOUT) :: data
+    REAL(8), DIMENSION(1024), INTENT(INOUT) :: data
     INTEGER, INTENT(OUT) :: error
 
     INTEGER(HID_T) :: file_id, group_id, dset_id, memspace_id, filespace_id, xfer_prp
